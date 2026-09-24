@@ -10,6 +10,11 @@ export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+pool.on('error', (err, client) => {
+  console.error('Error inesperado en el cliente de base de datos', err);
+  process.exit(-1);
+});
+
 // Probar la conexión inicial
 pool.connect((err, client, release) => {
   if (err) {

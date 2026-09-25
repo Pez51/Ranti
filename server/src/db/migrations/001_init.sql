@@ -1,19 +1,29 @@
--- Habilitar extensión para generar UUIDs
+-- 1. Habilitar extensión para generar UUIDs seguros
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Creación de ENUMs
+-- 2. Creación de Tipos de Datos (ENUMs) basados estrictamente en las reglas de negocio
 CREATE TYPE user_role AS ENUM ('Estudiante', 'Egresado', 'Administrador');
 CREATE TYPE user_status AS ENUM ('Pendiente de verificación', 'Activa', 'Suspendida');
-CREATE TYPE verification_status AS ENUM ('No verificado', 'En revisión', 'Verificado', 'Rechazado');
+CREATE TYPE verification_status AS ENUM ('No verificado', 'Pendiente de subsanación', 'En revisión', 'Verificado', 'Rechazado');
 CREATE TYPE modality_type AS ENUM ('Venta', 'Alquiler', 'Préstamo');
 CREATE TYPE publication_status AS ENUM ('Borrador', 'Pendiente de revisión', 'Activa', 'Pausada', 'Retirada');
-CREATE TYPE operation_status AS ENUM ('Pendiente', 'Aceptada', 'Pendiente de pago/garantía', 'Lista para entrega', 'Entregada/Activa', 'Cerrada', 'Cancelada', 'En incidencia');
+CREATE TYPE operation_status AS ENUM ('Pendiente', 'Aceptada', 'Pendiente de pago/garantía', 'Lista para entrega', 'Entregada/Activa', 'En cierre', 'Pendiente de resolución económica', 'Cerrada', 'Cancelada', 'En incidencia');
 CREATE TYPE reservation_status AS ENUM ('Bloqueo Provisional', 'Reservada/Bloqueada', 'Activa/En uso', 'Disponible');
 CREATE TYPE transaction_type AS ENUM ('Cobro', 'Registro de garantía', 'Liberación', 'Reversión', 'Reembolso');
 CREATE TYPE transaction_status AS ENUM ('Iniciada', 'Pendiente', 'Aprobada', 'Rechazada');
 CREATE TYPE incidence_status AS ENUM ('Abierta', 'Pendiente de subsanación', 'En revisión', 'Resuelta', 'Desestimada');
 
--- 1. Usuarios
+-- Nuevos ENUMs para Notificaciones y Derechos ARCO
+CREATE TYPE notification_type AS ENUM ('Transaccion', 'Alerta', 'Sistema');
+CREATE TYPE notification_status AS ENUM ('No leida', 'Leida', 'Archivada');
+CREATE TYPE arco_type AS ENUM ('Acceso', 'Rectificacion', 'Cancelacion', 'Oposicion');
+CREATE TYPE arco_status AS ENUM ('Presentada', 'Pendiente de subsanación', 'En revisión', 'Atendida', 'Parcialmente atendida', 'Rechazada');
+
+-- ==========================================
+-- DEFINICIÓN DE TABLAS
+-- ==========================================
+
+-- Tabla 1: Usuarios (Identidad y Roles)
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -28,7 +38,7 @@ CREATE TABLE users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. Publicaciones
+-- Tabla 2: Catálogo de Bienes
 CREATE TABLE publications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     owner_id UUID NOT NULL REFERENCES users(id),
@@ -45,7 +55,16 @@ CREATE TABLE publications (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Operaciones
+-- Tabla 3: Imágenes de Publicaciones (Normalización 1:N)
+CREATE TABLE publication_images (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    publication_id UUID NOT NULL REFERENCES publications(id) ON DELETE CASCADE,
+    image_url TEXT NOT NULL,
+    is_primary BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla 4: Operaciones (Motor Transaccional)
 CREATE TABLE operations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     publication_id UUID NOT NULL REFERENCES publications(id),
@@ -61,7 +80,7 @@ CREATE TABLE operations (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. Reservas (Control de Concurrencia)
+-- Tabla 5: Reservas y Calendarios (ACID Locks)
 CREATE TABLE reservations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     publication_id UUID NOT NULL REFERENCES publications(id),
@@ -72,7 +91,7 @@ CREATE TABLE reservations (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 5. Transacciones (Pagos y Garantías)
+-- Tabla 6: Transacciones Financieras y Escrow
 CREATE TABLE transactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     operation_id UUID NOT NULL REFERENCES operations(id),
@@ -83,7 +102,7 @@ CREATE TABLE transactions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 6. Incidencias
+-- Tabla 7: Incidencias y Disputas (UC-11 / UC-15)
 CREATE TABLE incidences (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     reporter_id UUID NOT NULL REFERENCES users(id),
@@ -91,13 +110,40 @@ CREATE TABLE incidences (
     operation_id UUID REFERENCES operations(id),
     type VARCHAR(100) NOT NULL,
     description TEXT NOT NULL,
+    evidence_url TEXT,
     status incidence_status DEFAULT 'Abierta',
     resolution_notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 7. Bitácora de Auditoría (NIST SP 800-92)
+-- Tabla 8: Solicitudes de Derechos ARCO (Ley 29733 - UC-14)
+CREATE TABLE arco_requests (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id),
+    type arco_type NOT NULL,
+    description TEXT NOT NULL,
+    evidence_url TEXT,
+    status arco_status DEFAULT 'Presentada',
+    admin_id UUID REFERENCES users(id),
+    resolution_notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla 9: Centro de Notificaciones Inteligente (UC-13)
+CREATE TABLE notifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id),
+    type notification_type NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    reference_id UUID, -- Puede enlazar al ID de una operación, publicación o reporte
+    status notification_status DEFAULT 'No leida',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla 10: Bitácora Inmutable (NIST SP 800-92)
 CREATE TABLE audit_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     actor_id UUID REFERENCES users(id),

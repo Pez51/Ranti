@@ -7,14 +7,14 @@ export const register = async (req, res) => {
 
   try {
     // 1. Regla de Negocio: Validar correo institucional
-    if (!email.includes('@ucsm.edu.pe') && !email.includes('@egresado.ucsm.edu.pe')) {
+    if (!email.includes('@estudiante.ucsm.edu.pe') && !email.includes('@ucsm.edu.pe')) {
       return res.status(400).json({ error: 'Solo se permiten correos institucionales de la UCSM.' });
     }
 
     // 2. Verificar si el usuario ya existe
     const userExists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (userExists.rows.length > 0) {
-      return res.status(409).json({ error: 'El correo ya está registrado.' });
+      return res.status(409).json({ error: 'El correo ya esta registrado.' });
     }
 
     // 3. Encriptar contraseña
@@ -53,20 +53,19 @@ export const login = async (req, res) => {
     // 1. Buscar usuario
     const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     if (userResult.rows.length === 0) {
-      return res.status(401).json({ error: 'Credenciales inválidas.' });
+      return res.status(401).json({ error: 'Credenciales invalidas.' });
     }
-
     const user = userResult.rows[0];
 
     // 2. Verificar si la cuenta está suspendida
     if (user.status === 'Suspendida') {
-      return res.status(403).json({ error: 'Tu cuenta ha sido suspendida por la administración.' });
+      return res.status(403).json({ error: 'Tu cuenta ha sido suspendida por la administracion' });
     }
 
     // 3. Comparar contraseñas
     const isValidPassword = await bcrypt.compare(password, user.password_hash);
     if (!isValidPassword) {
-      return res.status(401).json({ error: 'Credenciales inválidas.' });
+      return res.status(401).json({ error: 'Credenciales invalidas.' });
     }
 
     // 4. Generar JWT
@@ -77,7 +76,7 @@ export const login = async (req, res) => {
     );
 
     res.status(200).json({
-      message: 'Inicio de sesión exitoso',
+      message: 'Bienvenido :D',
       token,
       user: {
         id: user.id,

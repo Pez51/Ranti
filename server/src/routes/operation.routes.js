@@ -1,10 +1,16 @@
-import { Router } from 'express';
-import { createOperationHandler } from '../controllers/operation.controller.js';
-// import { requireAuth } from '../middlewares/auth.middleware.js'; // Implementar JWT posteriormente
+import express from 'express';
+import { createOperation, confirmDelivery } from '../controllers/operation.controller.js';
+import { requireAuth } from '../middlewares/auth.middleware.js';
 
-const router = Router();
+const router = express.Router();
 
-// router.post('/', requireAuth, createOperationHandler);
-router.post('/', createOperationHandler); // Temporal sin JWT para pruebas iniciales
+// Todas las rutas de operaciones son estrictamente privadas
+router.use(requireAuth);
+
+// Crear una nueva reserva / operación
+router.post('/', createOperation);
+
+// Confirmar la entrega de un equipo mediante OTP
+router.post('/:id/confirm', confirmDelivery);
 
 export default router;

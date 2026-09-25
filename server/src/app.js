@@ -3,9 +3,9 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-
-// Importación de rutas (las crearemos en el siguiente paso)
 import authRoutes from './routes/auth.routes.js';
+import publicationRoutes from './routes/publication.routes.js'; 
+import operationRoutes from './routes/operation.routes.js'; // <- IMPORTACIÓN NUEVA
 
 dotenv.config();
 
@@ -25,12 +25,13 @@ const limiter = rateLimit({
   message: 'Demasiadas peticiones desde esta IP, intenta de nuevo más tarde.'
 });
 app.use('/api', limiter);
-
 // Parseo de JSON (necesario para leer req.body)
 app.use(express.json());
 
 // Registro de Rutas Base
 app.use('/api/auth', authRoutes);
+app.use('/api/publications', publicationRoutes);
+app.use('/api/operations', operationRoutes); // <- REGISTRO NUEVO
 
 // Ruta de comprobación de salud del servidor (Health Check)
 app.get('/health', (req, res) => {

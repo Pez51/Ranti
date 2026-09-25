@@ -3,9 +3,11 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+
 import authRoutes from './routes/auth.routes.js';
 import publicationRoutes from './routes/publication.routes.js'; 
-import operationRoutes from './routes/operation.routes.js'; // <- IMPORTACIÓN NUEVA
+import operationRoutes from './routes/operation.routes.js'; 
+import notificationRoutes from './routes/notification.routes.js'; // <- IMPORTACIÓN NUEVA
 
 dotenv.config();
 
@@ -31,7 +33,8 @@ app.use(express.json());
 // Registro de Rutas Base
 app.use('/api/auth', authRoutes);
 app.use('/api/publications', publicationRoutes);
-app.use('/api/operations', operationRoutes); // <- REGISTRO NUEVO
+app.use('/api/operations', operationRoutes); 
+app.use('/api/notifications', notificationRoutes); // <- REGISTRO NUEVO
 
 // Ruta de comprobación de salud del servidor (Health Check)
 app.get('/health', (req, res) => {

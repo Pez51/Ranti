@@ -6,9 +6,9 @@ export const register = async (req, res) => {
   const { email, password, role = 'Estudiante', academic_condition } = req.body;
 
   try {
-    // 1. Regla de Negocio: Validar correo institucional
-    if (!email.includes('@estudiante.ucsm.edu.pe') && !email.includes('@ucsm.edu.pe')) {
-      return res.status(400).json({ error: 'Solo se permiten correos institucionales de la UCSM.' });
+    // 1. Regla de Negocio: Validar correo institucional (Mejorado con endsWith)
+    if (!email.endsWith('@estudiante.ucsm.edu.pe') && !email.endsWith('@ucsm.edu.pe')) {
+      return res.status(400).json({ error: 'Solo se permiten correos institucionales válidos de la UCSM.' });
     }
 
     // 2. Verificar si el usuario ya existe

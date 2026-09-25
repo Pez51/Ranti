@@ -9,9 +9,9 @@ export default function Login() {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    // Validación rápida frontend para el correo UCSM
-    if (!email.includes('@ucsm.edu.pe') && !email.includes('@egresado.ucsm.edu.pe')) {
-      alert('Debes utilizar tu correo institucional de la UCSM.');
+    // Validación frontend ACTUALIZADA para los nuevos dominios UCSM
+    if (!email.endsWith('@estudiante.ucsm.edu.pe') && !email.endsWith('@ucsm.edu.pe')) {
+      alert('Se debe utilizar un correo institucional de la UCSM para ingresar');
       return;
     }
     // Simulación de login exitoso
@@ -36,7 +36,7 @@ export default function Login() {
                 type="email" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="usuario@ucsm.edu.pe" 
+                placeholder="usuario@estudiante.ucsm.edu.pe" // Placeholder actualizado
                 className="w-full bg-transparent outline-none font-body font-bold text-ranti-ink" 
                 required 
               />

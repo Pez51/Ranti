@@ -1,36 +1,49 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Layout from './components/layout/Layout';
 
-// Vistas del Catálogo
+// Vistas Generales
 import Home from './features/catalog/Home';
 import ProductDetail from './features/catalog/ProductDetail';
+import NotFound from './components/layout/NotFound'; // <- IMPORTACIÓN NUEVA
 
-// Vistas de Dashboards
-import OferenteDashboard from './features/dashboard/OferenteDashboard';
-import AdminDashboard from './features/dashboard/AdminDashboard';
+// Vistas de Autenticación, Publicación y Legal
+import Login from './features/auth/Login';
+import CreatePublication from './features/publications/CreatePublication';
+import ClaimsForm from './features/legal/ClaimsForm';
+import ArcoForm from './features/legal/ArcoForm';
 
-// Vistas de Operaciones y Transacciones
+// Vistas de Operaciones
 import Checkout from './features/operations/Checkout';
 import EntregaOTP from './features/operations/EntregaOTP';
+
+// Paneles (Dashboards)
+import OferenteDashboard from './features/dashboard/OferenteDashboard';
+import AdminDashboard from './features/dashboard/AdminDashboard';
+import UserProfile from './features/dashboard/UserProfile'; // <- IMPORTACIÓN NUEVA
 
 function App() {
   return (
     <Router>
       <Layout>
         <Routes>
-          {/* Ruta Principal: Catálogo */}
           <Route path="/" element={<Home />} />
-          
-          {/* Detalle de Producto dinámica según el ID */}
           <Route path="/producto/:id" element={<ProductDetail />} />
-
-          {/* Rutas Transaccionales */}
+          
+          <Route path="/login" element={<Login />} />
+          <Route path="/publicar" element={<CreatePublication />} />
+          
           <Route path="/checkout/:id" element={<Checkout />} />
           <Route path="/entrega/:id" element={<EntregaOTP />} />
-
-          {/* Paneles de Control */}
+          
+          <Route path="/perfil" element={<UserProfile />} /> {/* RUTA DEL DEMANDANTE */}
           <Route path="/oferente" element={<OferenteDashboard />} />
           <Route path="/admin" element={<AdminDashboard />} />
+          
+          <Route path="/reclamaciones" element={<ClaimsForm />} />
+          <Route path="/privacidad" element={<ArcoForm />} />
+
+          {/* RUTA COMODÍN (Debe ir siempre al final). Captura cualquier URL no definida */}
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Layout>
     </Router>

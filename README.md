@@ -31,7 +31,10 @@ El núcleo transaccional de Ranti requiere una base de datos relacional para evi
 1. Conéctate a la base de datos ranti_db.
 2. Ejecuta el script de migración inicial. Abre el archivo ubicado en server/src/db/migrations/001_init_normalized.sql, copia todo su contenido y ejecútalo en la consola de consultas de tu base de datos. Esto creará automáticamente las 10 tablas y los tipos de datos (ENUMs) necesarios.   
 
-## ⚙️ 3. Configuración del Monorepo (package.json raíz)Para poder levantar el frontend y el backend al mismo tiempo con un solo comando, utilizamos la herramienta concurrently.Asegúrate de que en la raíz del proyecto exista un archivo llamado package.json con el siguiente contenido. Si no existe, créalo:JSON{
+## ⚙️ 3. Configuración del Monorepo (package.json raíz)
+Para poder levantar el frontend y el backend al mismo tiempo con un solo comando, utilizamos la herramienta concurrently.Asegúrate de que en la raíz del proyecto exista un archivo llamado package.json con el siguiente contenido.
+ Si no existe, créalo:
+ JSON{
   "name": "ranti-monorepo",
   "version": "1.0.0",
   "private": true,
@@ -46,7 +49,9 @@ El núcleo transaccional de Ranti requiere una base de datos relacional para evi
     "concurrently": "^8.2.2"
   }
 }
-## 🔐 4. Variables de Entorno (Archivo .env)Las credenciales de acceso y configuraciones sensibles nunca deben subirse a GitHub. Cada desarrollador debe crear su propio archivo local en el backend.Dirígete a la carpeta server/.Crea un archivo nuevo y llámalo exactamente .env (sin nombre antes del punto).Pega el siguiente contenido y reemplaza tu_usuario y tu_contraseña con las credenciales locales de tu PostgreSQL:Fragmento de código# Configuración del servidor
+## 🔐 4. Variables de Entorno (Archivo .env)
+Las credenciales de acceso y configuraciones sensibles nunca deben subirse a GitHub. Cada desarrollador debe crear su propio archivo local en el backend.Dirígete a la carpeta server/.Crea un archivo nuevo y llámalo exactamente .env (sin nombre antes del punto).Pega el siguiente contenido y reemplaza tu_usuario y tu_contraseña con las credenciales locales de tu PostgreSQL:
+Fragmento de código# Configuración del servidor
 PORT=3000
 NODE_ENV=development
 
@@ -56,8 +61,11 @@ DATABASE_URL=postgres://tu_usuario:tu_contraseña@localhost:5432/ranti_db
 
 # Secreto para la generación de Tokens de Sesión (JWT)
 JWT_SECRET=super_secreto_ranti_pfc_2026
-## ⚡ 5. Instalación y Levantamiento del ProyectoGracias a la configuración del monorepo, puedes instalar y arrancar todo desde la raíz del proyecto.Paso A: Instalar todas las dependencias (Solo la primera vez o si hay paquetes nuevos)Abre la terminal en la raíz del proyecto y ejecuta:Bashnpm run setup
-(Esto instalará concurrently y luego entrará a /client y /server para descargar sus respectivos node_modules).Paso B: Levantar Frontend y Backend juntosEn la misma terminal, ejecuta:Bashnpm run dev
+## ⚡ 5. Instalación y Levantamiento del Proyecto
+Gracias a la configuración del monorepo, puedes instalar y arrancar todo desde la raíz del proyecto.Paso A: Instalar todas las dependencias (Solo la primera vez o si hay paquetes nuevos)Abre la terminal en la raíz del proyecto y ejecuta:Bash
+npm run setup
+(Esto instalará concurrently y luego entrará a /client y /server para descargar sus respectivos node_modules).Paso B: Levantar Frontend y Backend juntosEn la misma terminal, ejecuta:Bash
+npm run dev
 Si todo está configurado correctamente, verás en tu terminal:
 ✅ Base de datos conectada exitosamente.
 🚀 Backend (API): Escuchando en http://localhost:3000

@@ -1,4 +1,5 @@
 import { Package, TrendingUp, Star, AlertTriangle, FileText, Settings } from 'lucide-react';
+import { Link } from 'react-router-dom'; // IMPORTANTE: Importamos Link para la navegación
 
 export default function OferenteDashboard() {
   return (
@@ -10,10 +11,15 @@ export default function OferenteDashboard() {
           <h2 className="text-3xl md:text-4xl font-display font-bold text-ranti-ink mb-1">Mi Panel de Oferente</h2>
           <p className="font-body font-semibold text-gray-500">Gestiona tus publicaciones, historial y calificaciones.</p>
         </div>
-        <button className="bg-ranti-ink text-white px-6 py-3 rounded-full border-4 border-ranti-ink shadow-solid hover:-translate-y-1 hover:shadow-solid-hover active:translate-y-1 active:shadow-none transition-all font-display font-bold flex items-center gap-2">
+        
+        {/* CORRECCIÓN: Botón convertido en Link para conectar con la vista de Creación */}
+        <Link 
+          to="/publicar" 
+          className="bg-ranti-ink text-white px-6 py-3 rounded-full border-4 border-ranti-ink shadow-solid hover:-translate-y-1 hover:shadow-solid-hover active:translate-y-1 active:shadow-none transition-all font-display font-bold flex items-center gap-2"
+        >
           <Package size={20} />
           Publicar Nuevo Bien
-        </button>
+        </Link>
       </div>
 
       {/* Tarjetas de Métricas (KPIs) */}
@@ -88,7 +94,7 @@ export default function OferenteDashboard() {
                   <span className="bg-yellow-300 text-ranti-ink text-xs font-bold px-2 py-1 rounded-md border-2 border-ranti-ink">Alquiler</span>
                 </td>
                 <td className="p-4 border-r-4 border-ranti-ink flex items-center gap-2">
-                  <div className="w-8 h-8 bg-gray-200 rounded-full border-2 border-ranti-ink overflow-hidden">
+                  <div className="w-8 h-8 bg-gray-200 rounded-full border-2 border-ranti-ink overflow-hidden flex-shrink-0">
                     <img src="https://placehold.co/100x100" alt="Avatar" />
                   </div>
                   María Gómez
@@ -113,7 +119,7 @@ export default function OferenteDashboard() {
                   <span className="bg-blue-300 text-ranti-ink text-xs font-bold px-2 py-1 rounded-md border-2 border-ranti-ink">Venta</span>
                 </td>
                 <td className="p-4 border-r-4 border-ranti-ink flex items-center gap-2">
-                  <div className="w-8 h-8 bg-gray-200 rounded-full border-2 border-ranti-ink overflow-hidden">
+                  <div className="w-8 h-8 bg-gray-200 rounded-full border-2 border-ranti-ink overflow-hidden flex-shrink-0">
                     <img src="https://placehold.co/100x100" alt="Avatar" />
                   </div>
                   Carlos Ruiz

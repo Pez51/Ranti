@@ -1,41 +1,31 @@
-import { MapPin } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 export default function SubNav() {
-  // Función que determina el estilo: verde claro si está activo, normal si no lo está.
   const activeLinkStyle = ({ isActive }) => 
-    `transition-colors underline-offset-4 hover:underline ${
+    `transition-colors underline-offset-4 hover:underline whitespace-nowrap px-2 py-1 ${
       isActive 
-        ? 'text-[#4ADE80] font-black' // El color verde claro de la imagen para la pestaña activa
-        : 'text-ranti-ink hover:text-ranti-secondary' // Color normal
+        ? 'text-[#4ADE80] font-black' 
+        : 'text-ranti-ink hover:text-ranti-secondary'
     }`;
 
   return (
-    <nav className="bg-white border-b-4 border-ranti-ink py-2 overflow-x-auto whitespace-nowrap shadow-sm">
-      <div className="container mx-auto px-4 flex items-center gap-6 font-display font-bold text-sm md:text-base">
+    <nav className="bg-white border-b-4 border-ranti-ink py-3 shadow-sm w-full">
+      {/* Contenedor responsivo: Scroll horizontal en móviles, centrado en escritorio */}
+      <div className="container mx-auto px-4 flex gap-6 overflow-x-auto hide-scrollbar text-sm md:text-base font-display font-bold md:justify-center">
         
-        {/* Ubicación Campus */}
-        <div className="flex items-center gap-1 text-ranti-dark border-r-4 border-ranti-ink pr-6">
-          <MapPin size={18} strokeWidth={2.5} /> 
-          <span>Campus Central UCSM</span>
-        </div>
+        <NavLink to="/" className={activeLinkStyle} end>Inicio</NavLink>
         
-        {/* Enlaces con estilos dinámicos */}
-        <NavLink to="/modalidad/alquiler" className={activeLinkStyle}>
-          Alquiler Rápido
-        </NavLink>
-        <NavLink to="/modalidad/venta" className={activeLinkStyle}>
-          Venta de Segunda
-        </NavLink>
-        <NavLink to="/modalidad/prestamo" className={activeLinkStyle}>
-          Préstamo Solidario
-        </NavLink>
-        <NavLink to="/facultad/arquitectura" className={activeLinkStyle}>
-          Arquitectura
-        </NavLink>
-        <NavLink to="/facultad/sistemas" className={activeLinkStyle}>
-          Ing. de Sistemas
-        </NavLink>
+        {/* Separador visual */}
+        <div className="w-1 h-6 bg-gray-200 rounded-full hidden md:block"></div>
+        
+        <NavLink to="/modalidad/alquiler" className={activeLinkStyle}>Alquiler Rápido</NavLink>
+        <NavLink to="/modalidad/venta" className={activeLinkStyle}>Venta de Segunda</NavLink>
+        <NavLink to="/modalidad/prestamo" className={activeLinkStyle}>Préstamo Solidario</NavLink>
+        
+        <div className="w-1 h-6 bg-gray-200 rounded-full hidden md:block"></div>
+        
+        <NavLink to="/facultad/arquitectura" className={activeLinkStyle}>Arquitectura</NavLink>
+        <NavLink to="/facultad/sistemas" className={activeLinkStyle}>Ing. de Sistemas</NavLink>
       </div>
     </nav>
   );

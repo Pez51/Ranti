@@ -73,30 +73,25 @@ export default function NotificationDrawer({ isOpen, onClose }) {
 
         {/* Filtros tipo "Píldora" */}
         <div className="p-4 border-b-4 border-ranti-ink bg-gray-50 flex gap-2 overflow-x-auto whitespace-nowrap hide-scrollbar">
-          {['todas', 'transacciones', 'alertas', 'sistema'].map((f) => (
+          {['todas', 'transaccion', 'alerta', 'sistema'].map((f) => (
             <button 
               key={f}
               onClick={() => setFilter(f)}
               className={`px-4 py-1.5 rounded-full border-2 border-ranti-ink font-bold text-sm capitalize transition-all ${
-                filter === f 
-                  ? 'bg-ranti-ink text-white shadow-solid-sm translate-y-[-2px]' 
-                  : 'bg-white text-ranti-ink hover:bg-gray-100'
+                filter === f ? 'bg-ranti-ink text-white shadow-solid-sm -translate-y-0.5' : 'bg-white text-ranti-ink hover:bg-gray-100'
               }`}
             >
-              {f}
+              {f === 'transaccion' ? 'transacciones' : f === 'alerta' ? 'alertas' : f}
             </button>
           ))}
         </div>
 
         {/* Lista de Notificaciones */}
         <div className="flex-grow overflow-y-auto p-4 space-y-4">
-          {mockNotifications.map((notif) => (
-            <div 
-              key={notif.id} 
-              className={`p-4 rounded-2xl border-4 border-ranti-ink transition-all ${
-                notif.unread ? 'bg-white shadow-solid-sm' : 'bg-gray-100 opacity-75'
-              }`}
-            >
+          {mockNotifications
+            .filter(notif => filter === 'todas' || notif.type === filter)
+            .map((notif) => (
+              <div key={notif.id} className={`p-4 rounded-2xl border-4 border-ranti-ink transition-all ${notif.unread ? 'bg-white shadow-solid-sm' : 'bg-gray-100 opacity-75'}`}>
               <div className="flex gap-4">
                 <div className={`mt-1 h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-full border-2 border-ranti-ink ${notif.color}`}>
                   {notif.icon}

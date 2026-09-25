@@ -1,0 +1,15 @@
+{
+  "name": "ranti-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plataforma de intercambio seguro de bienes universitarios - UCSM",
+  "scripts": {
+    "setup": "npm install && npm install --prefix server && npm install --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "dev": "concurrently -c \"cyan.bold,green.bold\" \"npm run dev:server\" \"npm run dev:client\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

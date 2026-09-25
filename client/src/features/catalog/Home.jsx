@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { ShoppingCart, Filter, TrendingUp, Clock, HeartHandshake } from 'lucide-react';
 
 // Datos simulados (Mock Data) basados en los bienes especializados de la UCSM
@@ -115,18 +116,20 @@ export default function Home() {
       </section>
 
       {/* Grid de Productos */}
+      {/* Grid de Productos (MODIFICADO PARA NAVEGACIÓN) */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
         {mockProducts.map((product) => (
-          <div key={product.id} className="bg-white rounded-3xl border-4 border-ranti-ink p-4 shadow-solid hover:-translate-y-2 hover:shadow-solid-hover transition-all duration-300 flex flex-col h-full group cursor-pointer">
-            
+          /* Reemplazamos el <div> principal por <Link> */
+          <Link 
+            to={`/producto/${product.id}`} 
+            key={product.id} 
+            className="bg-white rounded-3xl border-4 border-ranti-ink p-4 shadow-solid hover:-translate-y-2 hover:shadow-solid-hover transition-all duration-300 flex flex-col h-full group cursor-pointer block"
+          >
             {/* Contenedor de Imagen */}
             <div className={`aspect-square ${product.imageColor} rounded-2xl border-4 border-ranti-ink mb-4 overflow-hidden relative flex items-center justify-center`}>
-              {/* Etiqueta de Modalidad (Badge) */}
               <span className={`absolute top-3 left-3 ${product.badgeColor} text-ranti-ink text-xs font-display font-bold px-3 py-1.5 rounded-full border-4 border-ranti-ink flex items-center gap-1 shadow-solid-sm`}>
                 {product.icon} {product.modality}
               </span>
-              
-              {/* Placeholder de imagen (Icono grande o imagen real) */}
               <div className="text-6xl font-display font-bold text-ranti-ink opacity-20 group-hover:scale-110 transition-transform duration-300">
                 FOTO
               </div>
@@ -154,13 +157,13 @@ export default function Home() {
                   </p>
                 </div>
                 
-                {/* Botón de Solicitud */}
-                <button className="bg-ranti-secondary p-3 rounded-xl border-4 border-ranti-ink shadow-solid-sm hover:bg-ranti-primary hover:-translate-y-1 active:translate-y-1 active:shadow-none transition-all group-hover:animate-pulse">
+                {/* Botón visual (La navegación la maneja el <Link> padre) */}
+                <div className="bg-ranti-secondary p-3 rounded-xl border-4 border-ranti-ink shadow-solid-sm group-hover:bg-ranti-primary transition-all group-hover:animate-pulse">
                   <ShoppingCart size={22} className="text-white" strokeWidth={2.5} />
-                </button>
+                </div>
               </div>
             </div>
-          </div>
+          </Link>
         ))}
       </section>
 

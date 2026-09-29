@@ -1,5 +1,4 @@
 import { AppError } from '../../shared/errors/app-error.js';
-import { assertNoSensitiveKeys } from '../../shared/security/sensitive-data.js';
 import { appendAudit } from '../audit/audit.repository.js';
 import { enqueueOutboxEvent } from '../outbox/outbox.repository.js';
 import { requireCurrentUser, validHttpsReference } from './profile.service.js';
@@ -9,28 +8,23 @@ const forbidden = () => new AppError({ status: 403, code: 'FORBIDDEN', message: 
 const conflict = () => new AppError({ status: 409, code: 'ROLE_REQUEST_CONFLICT', message: 'La solicitud ya tiene otra decisión.' });
 const unavailable = () => new AppError({ status: 500, code: 'INTERNAL_ERROR', message: 'Error interno del servidor.' });
 const uuid = value => typeof value === 'string' && /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(value);
-const allowedMetadataKey = key => !/(?:dni|document|passport|identity|evidence.content|password|token|otp|pan|cvv|code|secret)/i.test(key);
+const metadataLimits = Object.freeze({ documentType: 100, institution: 200, academicPeriod: 100, note: 500 });
 
 function metadata(input) {
   const value = input === undefined ? {} : input;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
-  const seen = new WeakSet();
-  function scan(current) {
-    if (current === null || typeof current !== 'object') return;
-    if (seen.has(current)) throw invalid();
-    seen.add(current);
-    for (const [key, nested] of Object.entries(current)) {
-      if (!allowedMetadataKey(key)) throw invalid();
-      scan(nested);
-    }
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw invalid();
+  const parsed = {};
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== 'string' || !Object.hasOwn(metadataLimits, key)) throw invalid();
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !Object.hasOwn(descriptor, 'value') || typeof descriptor.value !== 'string') throw invalid();
+    const text = descriptor.value.trim();
+    if (!text || text.length > metadataLimits[key]) throw invalid();
+    parsed[key] = text;
   }
-  scan(value);
-  try {
-    assertNoSensitiveKeys(value, 'role evidence metadata');
-    const serialized = JSON.stringify(value);
-    if (!serialized || Buffer.byteLength(serialized, 'utf8') > 4096) throw invalid();
-    return JSON.parse(serialized);
-  } catch { throw invalid(); }
+  if (Buffer.byteLength(JSON.stringify(parsed), 'utf8') > 4096) throw invalid();
+  return parsed;
 }
 
 async function transaction(db, work) {
@@ -104,13 +98,18 @@ export async function decideStudentRole(db, input) {
       !input.reason.trim() || input.reason.trim().length > 500 ||
       Object.keys(input).some(key => !['adminId', 'requestId', 'decision', 'reason'].includes(key))) throw invalid();
   return transaction(db, async client => {
-    const admin = requireCurrentUser((await client.query('SELECT * FROM users WHERE id = $1', [input.adminId])).rows[0]);
-    if (admin.role !== 'Administrador') throw forbidden();
     const candidate = (await client.query('SELECT user_id FROM role_requests WHERE id = $1', [input.requestId])).rows[0];
     if (!candidate) throw new AppError({ status: 404, code: 'ROLE_REQUEST_NOT_FOUND', message: 'Solicitud no encontrada.' });
-    // Request creation locks the user first. Preserve that order to avoid inversion.
-    const user = (await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [candidate.user_id])).rows[0];
+    // Acquire every user lock in the same UUID order across concurrent decisions.
+    const lockedUsers = new Map();
+    for (const id of [...new Set([input.adminId, candidate.user_id])].sort()) {
+      lockedUsers.set(id, (await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [id])).rows[0]);
+    }
+    const admin = requireCurrentUser(lockedUsers.get(input.adminId));
+    if (admin.role !== 'Administrador') throw forbidden();
+    const user = lockedUsers.get(candidate.user_id);
     const row = (await client.query('SELECT * FROM role_requests WHERE id = $1 FOR UPDATE', [input.requestId])).rows[0];
+    if (!row || row.user_id !== candidate.user_id) throw conflict();
     const status = input.decision === 'approve' ? 'approved' : 'rejected';
     if (row.status !== 'pending') {
       if (row.status !== status) throw conflict();

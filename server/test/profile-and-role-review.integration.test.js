@@ -9,10 +9,10 @@ describe.skipIf(!enabled)('profile and role review on disposable PostgreSQL', ()
   let db, app, getOwnProfile, updateOwnProfile, requestStudentRole, decideStudentRole;
   const token = id => jwt.sign({ id, role: 'Administrador' }, process.env.JWT_SECRET || 'ranti-test-jwt-secret-local-only');
   const auth = id => ({ Authorization: `Bearer ${token(id)}` });
-  async function user(role = 'Egresado', status = 'Activa', verification = 'Verificado') {
-    return (await db.query(`INSERT INTO users (email, password_hash, role, status, verification_status,
-      reputation_score, operations_count) VALUES ($1, 'hash', $2, $3, $4, 3.75, 9) RETURNING *`,
-    [`${randomUUID()}@ucsm.edu.pe`, role, status, verification])).rows[0];
+  async function user(role = 'Egresado', status = 'Activa', verification = 'Verificado', id = randomUUID()) {
+    return (await db.query(`INSERT INTO users (id, email, password_hash, role, status, verification_status,
+      reputation_score, operations_count) VALUES ($1, $2, 'hash', $3, $4, $5, 3.75, 9) RETURNING *`,
+    [id, `${randomUUID()}@ucsm.edu.pe`, role, status, verification])).rows[0];
   }
   const evidence_ref = 'https://evidence.example.test/opaque-key';
   async function effects(id) {
@@ -56,7 +56,7 @@ describe.skipIf(!enabled)('profile and role review on disposable PostgreSQL', ()
   it('keeps a private request trail, allows rejection and resubmission, and promotes only after approval', async () => {
     const owner = await user(); const other = await user(); const admin = await user('Administrador');
     const first = await request(app).post('/api/users/me/role-requests').set(auth(owner.id))
-      .send({ evidence_ref, evidence_metadata: { kind: 'student-card' } });
+      .send({ evidence_ref, evidence_metadata: { documentType: 'student-card' } });
     expect(first.status).toBe(201);
     expect((await request(app).post('/api/users/me/role-requests').set(auth(owner.id))
       .send({ evidence_ref })).status).toBe(409);
@@ -72,6 +72,7 @@ describe.skipIf(!enabled)('profile and role review on disposable PostgreSQL', ()
       .send({ decision: 'reject', reason: '  Insufficient evidence  ' });
     expect(reject.status).toBe(200);
     expect(reject.body).toMatchObject({ status: 'rejected', review_reason: 'Insufficient evidence' });
+    expect(JSON.stringify(await effects(first.body.id))).not.toContain('student-card');
     expect((await db.query('SELECT role FROM users WHERE id = $1', [owner.id])).rows[0].role).toBe('Egresado');
     const second = await request(app).post('/api/users/me/role-requests').set(auth(owner.id))
       .send({ evidence_ref: 'https://host/new' });
@@ -125,6 +126,43 @@ describe.skipIf(!enabled)('profile and role review on disposable PostgreSQL', ()
     expect((await effects(pending.id)).outbox).toHaveLength(1);
     await expect(decideStudentRole(db, { ...input(second.id), decision: 'reject' }))
       .rejects.toMatchObject({ status: 409, code: 'ROLE_REQUEST_CONFLICT' });
+  });
+
+  it('refuses a decision after administrator revocation commits while the owner row is locked', async () => {
+    // Owner sorts first, so the decision waits there while revocation commits.
+    // The only valid serial outcome is denial with the request still pending.
+    const [ownerId, adminId] = [randomUUID(), randomUUID()].sort();
+    const owner = await user('Egresado', 'Activa', 'Verificado', ownerId);
+    const admin = await user('Administrador', 'Activa', 'Verificado', adminId);
+    const pending = await requestStudentRole(db, { userId: owner.id, evidence_ref });
+    const blocker = await db.connect();
+    let notifyCandidate;
+    const candidateRead = new Promise(resolve => { notifyCandidate = resolve; });
+    const instrumentedDb = { connect: async () => {
+      const client = await db.connect();
+      return { release: () => client.release(), query: async (sql, args) => {
+        const result = await client.query(sql, args);
+        if (sql.includes('SELECT user_id FROM role_requests WHERE id = $1')) notifyCandidate();
+        return result;
+      } };
+    } };
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [owner.id]);
+      const decision = decideStudentRole(instrumentedDb, { adminId: admin.id, requestId: pending.id,
+        decision: 'approve', reason: 'Record checked' }).catch(error => error);
+      await candidateRead;
+      await db.query("UPDATE users SET status = 'Suspendida' WHERE id = $1", [admin.id]);
+      await blocker.query('COMMIT');
+      const result = await decision;
+      expect(result).toMatchObject({ status: 403, code: 'ACCOUNT_UNAVAILABLE' });
+      expect((await db.query('SELECT role FROM users WHERE id = $1', [owner.id])).rows[0].role).toBe('Egresado');
+      expect((await db.query('SELECT status FROM role_requests WHERE id = $1', [pending.id])).rows[0].status).toBe('pending');
+      expect(await effects(pending.id)).toEqual({ audit: [], outbox: [] });
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
+    }
   });
 
   it.each(['audit_logs', 'outbox_events'])('rolls back approval when %s insert fails', async table => {

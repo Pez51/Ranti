@@ -61,7 +61,12 @@ describe('profile and role review validation', () => {
     });
 
   it.each([{ dni: '12345678' }, { nested: { password: 'secret' } }, { nested: [{ token: 'secret' }] },
-    { document_number: '123' }, { evidence_content: 'private' }])(
+    { document_number: '123' }, { evidence_content: 'private' }, { evidenceContent: 'private' },
+    { evidencecontent: 'private' }, { apiKey: 'secret' }, { apikey: 'secret' },
+    { note: { evidenceContent: 'private' } }, { note: ['private'] },
+    { institution: undefined }, { academicPeriod: () => '2026-2' }, { documentType: 7 },
+    { documentType: 'x'.repeat(101) }, { institution: 'x'.repeat(201) },
+    { academicPeriod: 'x'.repeat(101) }, { note: 'x'.repeat(501) }])(
     'rejects sensitive evidence metadata before SQL: %j', async evidence_metadata => {
       const { db, queries } = dbForUser();
       await expect(requestStudentRole(db, { userId, evidence_ref: 'https://host/id', evidence_metadata }))
@@ -70,12 +75,22 @@ describe('profile and role review validation', () => {
     });
 
   it('rejects oversized and non-object evidence metadata before SQL', async () => {
-    for (const evidence_metadata of [[], null, { description: 'x'.repeat(5000) }]) {
+    for (const evidence_metadata of [[], null, { note: 'x'.repeat(5000) }]) {
       const { db, queries } = dbForUser();
       await expect(requestStudentRole(db, { userId, evidence_ref: 'https://host/id', evidence_metadata }))
         .rejects.toMatchObject(invalid);
       expect(queries).toHaveLength(0);
     }
+  });
+
+  it('accepts only the four bounded flat metadata strings and passes them to persistence', async () => {
+    const { db, queries } = dbForUser();
+    const evidence_metadata = { documentType: '  constancia  ', institution: '  UCSM  ',
+      academicPeriod: '  2026-2  ', note: '  Review student record  ' };
+    await requestStudentRole(db, { userId, evidence_ref: 'https://host/id', evidence_metadata });
+    const insert = queries.find(({ sql }) => sql.includes('INSERT INTO role_requests'));
+    expect(insert.args[2]).toEqual({ documentType: 'constancia', institution: 'UCSM',
+      academicPeriod: '2026-2', note: 'Review student record' });
   });
 
   it.each([{ limit: 0 }, { limit: 101 }, { offset: -1 }, { limit: '10' }])(

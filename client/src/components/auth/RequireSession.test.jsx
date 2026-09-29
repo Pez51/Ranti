@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import RequireSession from './RequireSession';
 
@@ -89,5 +89,38 @@ describe('RequireSession', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
     expect(screen.getByTestId('requested-path')).toHaveTextContent('/publicar');
     expect(localStorage.getItem(SESSION_KEY)).toBeNull();
+  });
+
+  it('redirects when a session is removed in another tab', () => {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ token: 'stored-token', user: { role: 'Demandante' } }));
+    renderProtectedRoute('/perfil', '/perfil');
+
+    expect(screen.getByText('Protected page')).toBeInTheDocument();
+
+    act(() => {
+      localStorage.removeItem(SESSION_KEY);
+      window.dispatchEvent(new StorageEvent('storage', { key: SESSION_KEY, oldValue: 'stored-session', newValue: null }));
+    });
+
+    expect(screen.getByText('Login page')).toBeInTheDocument();
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+    expect(screen.getByTestId('requested-path')).toHaveTextContent('/perfil');
+    expect(screen.queryByText('Protected page')).not.toBeInTheDocument();
+  });
+
+  it('redirects when the current tab clears its session', () => {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ token: 'stored-token', user: { role: 'Demandante' } }));
+    renderProtectedRoute('/perfil', '/perfil');
+
+    expect(screen.getByText('Protected page')).toBeInTheDocument();
+
+    act(() => {
+      sessionStorage.removeItem(SESSION_KEY);
+      window.dispatchEvent(new Event('ranti-auth-changed'));
+    });
+
+    expect(screen.getByText('Login page')).toBeInTheDocument();
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+    expect(screen.queryByText('Protected page')).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Layout from './components/layout/Layout';
+import RequireSession from './components/auth/RequireSession';
 
 // Vistas Generales
 import Home from './features/catalog/Home';
@@ -30,17 +31,17 @@ function App() {
           <Route path="/producto/:id" element={<ProductDetail />} />
           
           <Route path="/login" element={<Login />} />
-          <Route path="/publicar" element={<CreatePublication />} />
+          <Route path="/publicar" element={<RequireSession><CreatePublication /></RequireSession>} />
           
-          <Route path="/checkout/:id" element={<Checkout />} />
-          <Route path="/entrega/:id" element={<EntregaOTP />} />
+          <Route path="/checkout/:id" element={<RequireSession><Checkout /></RequireSession>} />
+          <Route path="/entrega/:id" element={<RequireSession><EntregaOTP /></RequireSession>} />
           
-          <Route path="/perfil" element={<UserProfile />} /> {/* RUTA DEL DEMANDANTE */}
-          <Route path="/oferente" element={<OferenteDashboard />} />
-          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/perfil" element={<RequireSession><UserProfile /></RequireSession>} /> {/* RUTA DEL DEMANDANTE */}
+          <Route path="/oferente" element={<RequireSession><OferenteDashboard /></RequireSession>} />
+          <Route path="/admin" element={<RequireSession allowedRoles={['Administrador']}><AdminDashboard /></RequireSession>} />
           
-          <Route path="/reclamaciones" element={<ClaimsForm />} />
-          <Route path="/privacidad" element={<ArcoForm />} />
+          <Route path="/reclamaciones" element={<RequireSession><ClaimsForm /></RequireSession>} />
+          <Route path="/privacidad" element={<RequireSession><ArcoForm /></RequireSession>} />
 
           {/* RUTA COMODÍN (Debe ir siempre al final). Captura cualquier URL no definida */}
           <Route path="*" element={<NotFound />} />

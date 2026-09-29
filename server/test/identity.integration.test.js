@@ -38,6 +38,42 @@ describe.skipIf(!enabled)('verified institutional registration with disposable P
   });
   afterAll(async () => { vi.unstubAllEnvs(); vi.doUnmock('../src/config/database.js'); if (db) await db.end(); });
 
+  it.each([
+    ['base domain', local => `${local}@ucsm.edu.pe`],
+    ['subdomain', local => `${local}@faculty.ucsm.edu.pe`],
+    ['uppercase and whitespace', local => ` ${local.toUpperCase()}@FACULTY.UCSM.EDU.PE `],
+    ['64-byte local part', local => `${local.padEnd(64, 'a')}@ucsm.edu.pe`],
+    ['63-byte DNS label', local => `${local}@${'a'.repeat(63)}.ucsm.edu.pe`],
+    ['254-byte address', local => `${local.padEnd(64, 'a')}@${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(49)}.ucsm.edu.pe`],
+    ['internal hostname hyphen', local => `${local}@valid-label.ucsm.edu.pe`],
+  ])('registers valid institutional email boundary: %s', async (_name, makeEmail) => {
+    const email = makeEmail(randomUUID());
+    const response = await request(app).post('/api/auth/register').send(input({ email }));
+    expect(response.status).toBe(201);
+    expect(response.body).not.toHaveProperty('token');
+    expect((await readUser(response.body.user.id)).email).toBe(email.trim().toLowerCase());
+    expect((await readChallenge(response.body.challenge_id)).email).toBe(email.trim().toLowerCase());
+  });
+
+  it.each([
+    ['trailing hostname hyphen', local => `${local}@bad-.ucsm.edu.pe`],
+    ['leading hostname hyphen', local => `${local}@-bad.ucsm.edu.pe`],
+    ['64-byte DNS label', local => `${local}@${'a'.repeat(64)}.ucsm.edu.pe`],
+    ['65-byte local part', local => `${local.padEnd(65, 'a')}@ucsm.edu.pe`],
+    ['255-byte address', local => `${local.padEnd(64, 'a')}@${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(50)}.ucsm.edu.pe`],
+    ['hostname underscore', local => `${local}@bad_label.ucsm.edu.pe`],
+    ['empty hostname label', local => `${local}@bad..ucsm.edu.pe`],
+    ['non-ASCII hostname label', local => `${local}@facultád.ucsm.edu.pe`],
+  ])('rejects malformed institutional registration without persisting an account: %s', async (_name, makeEmail) => {
+    const email = makeEmail(randomUUID());
+    const response = await request(app).post('/api/auth/register').send(input({ email }));
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ code: 'IDENTITY_INVALID_INPUT' });
+    expect(response.body).not.toHaveProperty('token');
+    expect((await db.query('SELECT id FROM users WHERE email = $1', [email])).rows).toEqual([]);
+    expect((await db.query('SELECT id FROM identity_challenges WHERE email = $1', [email])).rows).toEqual([]);
+  });
+
   it('stores consent and hashes, ignores caller role, and emits no JWT before verification', async () => {
     const data = input({ email: ` Identity-${randomUUID()}@FACULTAD.UCSM.EDU.PE `, role: 'Administrador' });
     const response = await request(app).post('/api/auth/register').send(data);

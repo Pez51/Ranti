@@ -18,6 +18,35 @@ describe('institutional identity boundary', () => {
     expect(boundary.isUcsmInstitutionalEmail).toBeTypeOf('function');
     expect(boundary.isUcsmInstitutionalEmail(email)).toBe(false);
   });
+  const addressBoundaries = [
+    ['64-byte local part', `${'a'.repeat(64)}@ucsm.edu.pe`, true],
+    ['63-byte DNS label', `p@${'a'.repeat(63)}.ucsm.edu.pe`, true],
+    ['254-byte address', `${'a'.repeat(64)}@${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(49)}.ucsm.edu.pe`, true],
+    ['internal hostname hyphen', 'p@valid-label.ucsm.edu.pe', true],
+    ['trailing hostname hyphen', 'p@bad-.ucsm.edu.pe', false],
+    ['leading hostname hyphen', 'p@-bad.ucsm.edu.pe', false],
+    ['64-byte DNS label', `p@${'a'.repeat(64)}.ucsm.edu.pe`, false],
+    ['65-byte local part', `${'a'.repeat(65)}@ucsm.edu.pe`, false],
+    ['255-byte address', `${'a'.repeat(64)}@${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(50)}.ucsm.edu.pe`, false],
+    ['hostname underscore', 'p@bad_label.ucsm.edu.pe', false],
+    ['empty hostname label', 'p@bad..ucsm.edu.pe', false],
+    ['non-ASCII hostname label', 'p@facultád.ucsm.edu.pe', false],
+  ];
+  it.each(addressBoundaries)('validates email octet and hostname boundaries: %s', (_name, email, valid) => {
+    expect(boundary.isUcsmInstitutionalEmail(email)).toBe(valid);
+  });
+  it.each(addressBoundaries)('uses the same email boundary for simulator request and resolution: %s', async (_name, email, valid) => {
+    const provider = new simulated.SimulatedIdentityProvider();
+    if (valid) {
+      expect(await provider.requestVerification(email)).toHaveProperty('codeHash');
+      expect(await provider.resolveInstitutionalIdentity(email)).toEqual({ email, provider: 'simulated' });
+    } else {
+      const results = await Promise.allSettled([
+        provider.requestVerification(email), provider.resolveInstitutionalIdentity(email),
+      ]);
+      expect(results.map(result => result.status)).toEqual(['rejected', 'rejected']);
+    }
+  });
   it('implements the provider contract with a random six-digit bcrypt challenge and ten-minute expiry', async () => {
     expect(simulated.SimulatedIdentityProvider).toBeTypeOf('function');
     const provider = new simulated.SimulatedIdentityProvider();

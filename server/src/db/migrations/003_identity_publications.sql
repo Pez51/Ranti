@@ -38,7 +38,7 @@ CREATE TABLE role_requests (
     status text NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'approved', 'rejected')),
     evidence_ref text NOT NULL
-        CHECK (evidence_ref ~ '^https://[^/?#[:space:]]+[^[:space:]]*$'),
+        CHECK (evidence_ref ~ '^https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?([.][A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*(:[0-9]{1,5})?([/?#][^[:space:]]*)?$'),
     evidence_metadata jsonb NOT NULL DEFAULT '{}'::jsonb
         CHECK (jsonb_typeof(evidence_metadata) = 'object'),
     reviewed_by uuid REFERENCES users(id),

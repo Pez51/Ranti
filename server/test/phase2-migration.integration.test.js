@@ -176,6 +176,17 @@ describe.skipIf(!enabled)('Phase 2 identity and publication migration', () => {
     expect((await db.query(sql, [userId, 'https://evidence.example.test/new-request', {}])).rows[0].status).toBe('pending');
   });
 
+  it.each(['https://@', 'https://host:bad'])(
+    'rejects a malformed HTTPS evidence authority: %s', async (malformedReference) => {
+      await runMigrations(db);
+      const userId = await insertUser('evidence@ucsm.edu.pe');
+      const { id } = (await db.query(`INSERT INTO role_requests (user_id, evidence_ref)
+        VALUES ($1, 'https://evidence.example.test:443/opaque-id?sig=abc') RETURNING id`, [userId])).rows[0];
+      await expect(db.query('UPDATE role_requests SET evidence_ref = $1 WHERE id = $2', [malformedReference, id]))
+        .rejects.toMatchObject({ code: '23514' });
+    },
+  );
+
   it('rejects incomplete publication date windows while accepting ordered windows', async () => {
     await runMigrations(db);
     const ownerId = await insertUser('publisher@ucsm.edu.pe');

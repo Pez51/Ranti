@@ -34,6 +34,8 @@ describe('configuración del servidor', () => {
       JWT_SECRET: validSource.JWT_SECRET,
       FRONTEND_URL: 'http://localhost:5173',
       PAYMENT_PROVIDER: 'simulated',
+      IDENTITY_PROVIDER: 'simulated',
+      IDENTITY_SIMULATOR_EXPOSE_CODE: false,
     });
     expect(Object.isFrozen(config)).toBe(true);
   });

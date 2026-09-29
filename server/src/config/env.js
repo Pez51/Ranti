@@ -13,6 +13,8 @@ const schema = z.object({
   JWT_SECRET: z.string().min(1),
   FRONTEND_URL: z.string().url().default('http://localhost:5173'),
   PAYMENT_PROVIDER: z.enum(['simulated', 'culqi', 'niubiz']).default('simulated'),
+  IDENTITY_PROVIDER: z.enum(['simulated']).default('simulated'),
+  IDENTITY_SIMULATOR_EXPOSE_CODE: z.enum(['true', 'false']).default('false').transform(value => value === 'true'),
 }).superRefine((value, context) => {
   if (value.NODE_ENV !== 'test' && value.JWT_SECRET.length < 32) {
     context.addIssue({

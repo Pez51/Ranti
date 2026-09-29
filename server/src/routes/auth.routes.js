@@ -1,11 +1,13 @@
 import express from 'express';
-import { register, login } from '../controllers/auth.controller.js';
+import { register, login, resend, confirm } from '../controllers/auth.controller.js';
 import { requireAuth } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
 // Rutas Públicas
 router.post('/register', register);
+router.post('/verification/resend', resend);
+router.post('/verification/confirm', confirm);
 router.post('/login', login);
 
 // Ruta de Prueba Privada (Ejemplo para verificar que el token funciona)

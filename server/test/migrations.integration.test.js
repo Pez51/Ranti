@@ -1,4 +1,7 @@
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
@@ -78,6 +81,54 @@ describe.skipIf(!enabled)('Migraciones con PostgreSQL temporal real', () => {
     expect((await db.query('SELECT name FROM schema_migrations ORDER BY name')).rows)
       .toEqual([{ name: '001_slow.sql' }, { name: '002_next.sql' }]);
     await noLeakedSession();
+  });
+
+  it('adopta explícitamente 001 histórica, conserva datos y aplica 002 una sola vez', async () => {
+    const baseline = await readFile(new URL('../src/db/migrations/001_init.sql', import.meta.url));
+    await db.query(baseline.toString('utf8'));
+    const { rows } = await db.query(`INSERT INTO users (email, password_hash, role)
+      VALUES ('legacy@example.test', 'historical-hash', 'Estudiante') RETURNING id`);
+    // Sin consentimiento explícito, no se registra el esquema como migrado.
+    await expect(runMigrations(db)).rejects.toMatchObject({ code: '42710' });
+    expect((await db.query('SELECT name FROM schema_migrations')).rows).toEqual([]);
+    expect(await runMigrations(db, { adoptBaseline: true }))
+      .toEqual({ applied: ['002_foundations.sql'], skipped: ['001_init.sql'] });
+    expect((await db.query('SELECT id, email, password_hash FROM users')).rows)
+      .toEqual([{ id: rows[0].id, email: 'legacy@example.test', password_hash: 'historical-hash' }]);
+    expect((await db.query('SELECT name, checksum FROM schema_migrations ORDER BY name')).rows)
+      .toEqual([{ name: '001_init.sql', checksum: createHash('sha256').update(baseline).digest('hex') },
+        { name: '002_foundations.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) }]);
+    expect((await db.query("SELECT to_regclass('outbox_events') AS name")).rows[0].name).toBe('outbox_events');
+    expect(await runMigrations(db, { adoptBaseline: true }))
+      .toEqual({ applied: [], skipped: ['001_init.sql', '002_foundations.sql'] });
+    await noLeakedSession();
+  });
+
+  it.each([
+    'DROP TABLE audit_logs',
+    'ALTER TABLE audit_logs DROP COLUMN old_values',
+    'ALTER TABLE audit_logs ADD COLUMN incompatible text NOT NULL DEFAULT \'x\'',
+    "ALTER TYPE user_role ADD VALUE 'Unexpected'",
+    'ALTER TABLE users DROP CONSTRAINT users_email_key',
+    'ALTER TABLE audit_logs ADD CONSTRAINT extra_check CHECK (action <> \'created\')',
+  ])('rechaza una línea base incompleta o incompatible: %s', async (change) => {
+    await db.query(await readFile(new URL('../src/db/migrations/001_init.sql', import.meta.url), 'utf8'));
+    await db.query(change);
+    await expect(runMigrations(db, { adoptBaseline: true }))
+      .rejects.toMatchObject({ code: 'BASELINE_ADOPTION_VALIDATION_FAILED' });
+    expect((await db.query('SELECT name FROM schema_migrations')).rows).toEqual([]);
+    expect((await db.query("SELECT to_regclass('outbox_events') AS name")).rows[0].name).toBeNull();
+    await noLeakedSession();
+  });
+
+  it('el CLI --adopt-baseline usa la base histórica explícita y sale correctamente', async () => {
+    await db.query(await readFile(new URL('../src/db/migrations/001_init.sql', import.meta.url), 'utf8'));
+    const { stdout } = await promisify(execFile)(process.execPath,
+      [fileURLToPath(new URL('../src/db/migrate.js', import.meta.url)), '--adopt-baseline'],
+      { env: { ...process.env, DATABASE_URL: db.options.connectionString, NODE_ENV: 'test' } });
+    expect(stdout).toContain('002_foundations.sql');
+    expect((await db.query('SELECT name FROM schema_migrations ORDER BY name')).rows)
+      .toEqual([{ name: '001_init.sql' }, { name: '002_foundations.sql' }]);
   });
 
   it('detecta cambios de bytes incluso CRLF/LF antes de aplicar archivos nuevos', async () => {

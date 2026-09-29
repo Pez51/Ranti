@@ -3,12 +3,13 @@ import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import pool from '../config/database.js';
+import { baselineValidationError, validateBaseline } from './validate-baseline.js';
 
 const migrationsDirectory = fileURLToPath(new URL('./migrations/', import.meta.url));
 // Shared by every runner; session ownership survives each migration's COMMIT.
 const migrationLock = [1380011604, 1];
 
-export async function runMigrations(db = pool, { directory = migrationsDirectory } = {}) {
+export async function runMigrations(db = pool, { directory = migrationsDirectory, adoptBaseline = false } = {}) {
   const client = await db.connect();
   let locked = false;
   let discardClient;
@@ -35,6 +36,9 @@ export async function runMigrations(db = pool, { directory = migrationsDirectory
         throw error;
       }
     }
+    if (adoptBaseline && !history.has('001_init.sql') && !migrations.some((m) => m.name === '001_init.sql')) {
+      throw baselineValidationError('001_init.sql is missing from the migration directory');
+    }
     const result = { applied: [], skipped: [] };
     for (const migration of migrations) {
       if (history.has(migration.name)) {
@@ -43,11 +47,13 @@ export async function runMigrations(db = pool, { directory = migrationsDirectory
       }
       await client.query('BEGIN');
       try {
-        await client.query(migration.bytes.toString('utf8'));
+        const adopting = adoptBaseline && migration.name === '001_init.sql';
+        if (adopting) await validateBaseline(client);
+        else await client.query(migration.bytes.toString('utf8'));
         await client.query('INSERT INTO schema_migrations (name, checksum) VALUES ($1, $2)',
           [migration.name, migration.checksum]);
         await client.query('COMMIT');
-        result.applied.push(migration.name);
+        result[adopting ? 'skipped' : 'applied'].push(migration.name);
       } catch (error) {
         try { await client.query('ROLLBACK'); } catch (rollbackError) { discardClient = rollbackError; }
         throw error;
@@ -69,7 +75,7 @@ export async function runMigrations(db = pool, { directory = migrationsDirectory
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
-    console.log(await runMigrations());
+    console.log(await runMigrations(pool, { adoptBaseline: process.argv.includes('--adopt-baseline') }));
   } catch (error) {
     console.error(`Migration failed (${error.code || 'ERROR'}): ${error.message}`);
     process.exitCode = 1;

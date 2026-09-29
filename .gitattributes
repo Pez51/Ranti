@@ -1,0 +1,2 @@
+# Migration checksums cover raw bytes; all checkouts must preserve LF.
+server/src/db/migrations/*.sql text eol=lf

@@ -3,6 +3,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { env } from './config/env.js';
+import { requestContext } from './middlewares/request-context.middleware.js';
+import { errorHandler, notFound } from './middlewares/error.middleware.js';
 
 import authRoutes from './routes/auth.routes.js';
 import publicationRoutes from './routes/publication.routes.js'; 
@@ -10,6 +12,8 @@ import operationRoutes from './routes/operation.routes.js';
 import notificationRoutes from './routes/notification.routes.js'; // <- IMPORTACIÓN NUEVA
 
 const app = express();
+
+app.use(requestContext);
 
 // Middlewares de Seguridad Globales
 app.use(helmet()); // Protege cabeceras HTTP
@@ -38,5 +42,8 @@ app.use('/api/notifications', notificationRoutes); // <- REGISTRO NUEVO
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'API Ranti funcionando correctamente' });
 });
+
+app.use(notFound);
+app.use(errorHandler);
 
 export default app;

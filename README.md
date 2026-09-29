@@ -31,8 +31,12 @@ Ranti utiliza PostgreSQL para publicaciones, operaciones y reservas. El esquema 
    CREATE DATABASE ranti_db;
    ```
 
-3. Conéctate a `ranti_db`.
-4. Ejecuta `server/src/db/migrations/001_init.sql` en esa base de datos. Es la migración inicial disponible en el repositorio.
+3. Instala las dependencias y configura `server/.env` como se indica abajo.
+4. Desde la raíz ejecuta `npm run migrate --prefix server`. El runner aplica los archivos SQL numerados de `server/src/db/migrations` y registra su checksum SHA-256 en `schema_migrations`.
+
+Las migraciones se serializan con un bloqueo advisory de sesión y cada archivo se aplica en una transacción junto a su historial. Repetir el comando omite archivos ya aplicados; modificar sus bytes (incluidos los finales de línea) produce `MIGRATION_CHECKSUM_MISMATCH` antes de aplicar archivos pendientes. Conserva los bytes originales de las migraciones desplegadas, especialmente `001_init.sql`, y añade cambios en archivos nuevos con prefijos numéricos de tres dígitos crecientes.
+
+El runner está preparado para bases vacías o con historial creado por él. Una base inicializada manualmente con `001_init.sql` necesita una conciliación controlada del esquema y su historial antes de usarlo; no marca automáticamente un esquema existente como migrado. La migración `002` añade metadatos y protección contra UPDATE/DELETE a auditoría, además del esquema de outbox. Los repositorios y el trabajador outbox corresponden a tareas posteriores.
 
 ## ⚙️ 3. Instalación
 
@@ -63,7 +67,7 @@ VITE_API_URL=https://api.ejemplo.test/api
 
 Desde la raíz, `npm run dev` inicia la API y el cliente. Por defecto se sirven en `http://localhost:3000` y `http://localhost:5173`. La API necesita una base de datos configurada y no empieza a escuchar si PostgreSQL no responde.
 
-Desde `server`, `npm test` ejecuta 10 pruebas unitarias. Las 31 pruebas de integración se omiten si no se suministra la instancia temporal. Desde `client`, `npm run lint` comprueba el código y `npm run build` genera el frontend.
+Desde `server`, `npm test` ejecuta las pruebas unitarias. Las pruebas de integración se omiten si no se suministra la instancia temporal. Desde `client`, `npm run lint` comprueba el código y `npm run build` genera el frontend.
 
 En Windows, ejecuta desde la raíz para comprobar la API contra PostgreSQL real:
 
@@ -73,7 +77,7 @@ En Windows, ejecuta desde la raíz para comprobar la API contra PostgreSQL real:
 .\tools\test-postgres.ps1 -PostgresBin 'C:\Program Files\PostgreSQL\16\bin'
 ```
 
-El script crea una instancia exclusiva en una carpeta temporal, usa un puerto local libre, aplica la migración inicial y ejecuta los casos de catálogo, autorización, pagos pendientes y concurrencia de reservas/entregas. Detiene y elimina esa instancia al terminar; no modifica las bases de datos existentes ni usa sus credenciales.
+El script crea una instancia exclusiva en una carpeta temporal, usa un puerto local libre y ejecuta toda la suite del servidor. Las pruebas aplican las migraciones mediante el runner y verifican su repetición, concurrencia, checksums y rollback, además de catálogo, autorización, pagos pendientes y concurrencia de reservas/entregas. Detiene y elimina esa instancia al terminar; no modifica las bases de datos existentes ni usa sus credenciales.
 
 ## 6. Acceso y operaciones pendientes
 

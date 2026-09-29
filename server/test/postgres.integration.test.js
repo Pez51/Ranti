@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
@@ -58,8 +57,8 @@ describe.skipIf(!enabled)('API con PostgreSQL temporal real', () => {
     process.env.JWT_SECRET = secret;
     ({ default: app } = await import('../src/app.js'));
     ({ default: pool } = await import('../src/config/database.js'));
-    const migration = await readFile(new URL('../src/db/migrations/001_init.sql', import.meta.url), 'utf8');
-    await pool.query(migration);
+    const { runMigrations } = await import('../src/db/migrate.js');
+    await runMigrations(pool);
     owner = await user();
     buyer = await user();
   });

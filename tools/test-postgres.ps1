@@ -38,7 +38,7 @@ try {
     $env:RANTI_EPHEMERAL_DB = '1'
     Push-Location (Join-Path $repoRoot 'server')
     try {
-        npm test -- test/postgres.integration.test.js
+        npm test
         $testExitCode = $LASTEXITCODE
     } finally {
         Pop-Location

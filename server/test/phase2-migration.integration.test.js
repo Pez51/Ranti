@@ -176,7 +176,8 @@ describe.skipIf(!enabled)('Phase 2 identity and publication migration', () => {
     expect((await db.query(sql, [userId, 'https://evidence.example.test/new-request', {}])).rows[0].status).toBe('pending');
   });
 
-  it.each(['https://@', 'https://host:bad'])(
+  it.each(['https://@', 'https://host:bad', 'https://host:0', 'https://host:65536',
+    'https://host:99999', 'https://host:9999999999999999999999'])(
     'rejects a malformed HTTPS evidence authority: %s', async (malformedReference) => {
       await runMigrations(db);
       const userId = await insertUser('evidence@ucsm.edu.pe');
@@ -186,6 +187,18 @@ describe.skipIf(!enabled)('Phase 2 identity and publication migration', () => {
         .rejects.toMatchObject({ code: '23514' });
     },
   );
+
+  it('accepts HTTPS evidence references without a port and with boundary ports', async () => {
+    await runMigrations(db);
+    const userId = await insertUser('valid-evidence@ucsm.edu.pe');
+    const { id } = (await db.query(`INSERT INTO role_requests (user_id, evidence_ref)
+      VALUES ($1, 'https://host/path') RETURNING id`, [userId])).rows[0];
+    for (const reference of ['https://host:1/path', 'https://host:65535/path', 'https://host/path']) {
+      const row = (await db.query('UPDATE role_requests SET evidence_ref = $1 WHERE id = $2 RETURNING evidence_ref',
+        [reference, id])).rows[0];
+      expect(row.evidence_ref).toBe(reference);
+    }
+  });
 
   it('rejects incomplete publication date windows while accepting ordered windows', async () => {
     await runMigrations(db);

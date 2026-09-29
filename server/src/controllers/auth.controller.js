@@ -1,16 +1,31 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
+import { z } from 'zod';
+
+const institutionalEmail = z.string().trim().toLowerCase().email().max(255).refine(
+  (email) => email.endsWith('@estudiante.ucsm.edu.pe') || email.endsWith('@ucsm.edu.pe'),
+  'Solo se permiten correos institucionales válidos de la UCSM.',
+);
+const registerInput = z.object({
+  email: institutionalEmail,
+  password: z.string().min(8).max(72),
+  role: z.literal('Estudiante').optional(),
+  academic_condition: z.string().trim().max(100).optional(),
+});
+const loginInput = z.object({
+  email: institutionalEmail,
+  password: z.string().min(1).max(72),
+});
 
 export const register = async (req, res) => {
-  const { email, password, role = 'Estudiante', academic_condition } = req.body;
+  const parsed = registerInput.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { email, password, academic_condition } = parsed.data;
 
   try {
-    // 1. Regla de Negocio: Validar correo institucional (Mejorado con endsWith)
-    if (!email.endsWith('@estudiante.ucsm.edu.pe') && !email.endsWith('@ucsm.edu.pe')) {
-      return res.status(400).json({ error: 'Solo se permiten correos institucionales válidos de la UCSM.' });
-    }
-
     // 2. Verificar si el usuario ya existe
     const userExists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (userExists.rows.length > 0) {
@@ -24,8 +39,8 @@ export const register = async (req, res) => {
     // 4. Guardar en PostgreSQL
     const newUser = await pool.query(
       `INSERT INTO users (email, password_hash, role, academic_condition) 
-       VALUES ($1, $2, $3, $4) RETURNING id, email, role, status`,
-      [email, passwordHash, role, academic_condition]
+       VALUES ($1, $2, $3, $4) RETURNING id, email, role, status, verification_status`,
+      [email, passwordHash, 'Estudiante', academic_condition]
     );
 
     // 5. Generar JWT
@@ -41,13 +56,20 @@ export const register = async (req, res) => {
       user: newUser.rows[0]
     });
   } catch (error) {
-    console.error('Error en registro:', error);
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'El correo ya está registrado.' });
+    }
+    console.error('Error en registro:', error.message);
     res.status(500).json({ error: 'Error interno del servidor.' });
   }
 };
 
 export const login = async (req, res) => {
-  const { email, password } = req.body;
+  const parsed = loginInput.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Ingresa un correo institucional y una contraseña válidos.' });
+  }
+  const { email, password } = parsed.data;
 
   try {
     // 1. Buscar usuario
@@ -82,11 +104,13 @@ export const login = async (req, res) => {
         id: user.id,
         email: user.email,
         role: user.role,
+        status: user.status,
+        verification_status: user.verification_status,
         reputation: user.reputation_score
       }
     });
   } catch (error) {
-    console.error('Error en login:', error);
+    console.error('Error en login:', error.message);
     res.status(500).json({ error: 'Error interno del servidor.' });
   }
 };

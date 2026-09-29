@@ -1,0 +1,178 @@
+<?xml version='1.0' encoding='utf-8'?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_leer-notificaciones" targetNamespace="https://ranti.local/processes">
+  <bpmn:process id="Process_leer-notificaciones" name="Consultar y leer notificaciones" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_leer-notificaciones">
+      <bpmn:lane id="Lane_Usuario_leer-notificaciones" name="Usuario">
+        <bpmn:flowNodeRef>Node_leer-notificaciones_start</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_leer-notificaciones_display</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_leer-notificaciones_read</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Sistema_leer-notificaciones" name="Sistema">
+        <bpmn:flowNodeRef>Node_leer-notificaciones_auth</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_leer-notificaciones_auth_ok</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_leer-notificaciones_auth_reject</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_leer-notificaciones_list</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_leer-notificaciones_update</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_leer-notificaciones_found</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_leer-notificaciones_missing</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_leer-notificaciones_done</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Node_leer-notificaciones_start" name="Abrir bandeja">
+      <bpmn:documentation>Fuente: client/src/components/layout/NotificationDrawer.jsx:10-14</bpmn:documentation>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="Node_leer-notificaciones_auth" name="Validar JWT">
+      <bpmn:documentation>Fuente: server/src/routes/notification.routes.js:8</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Node_leer-notificaciones_auth_ok" name="Token válido?">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:11-26</bpmn:documentation>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Node_leer-notificaciones_auth_reject" name="401/403 Rechazo">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:11-26</bpmn:documentation>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Node_leer-notificaciones_list" name="Consultar propias">
+      <bpmn:documentation>Fuente: server/src/controllers/notification.controller.js:9-15</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="Node_leer-notificaciones_display" name="Ver notificaciones">
+      <bpmn:documentation>Fuente: client/src/components/layout/NotificationDrawer.jsx:97-118</bpmn:documentation>
+    </bpmn:userTask>
+    <bpmn:userTask id="Node_leer-notificaciones_read" name="Pulsar marcar leída">
+      <bpmn:documentation>Fuente: client/src/components/layout/NotificationDrawer.jsx:115-117</bpmn:documentation>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="Node_leer-notificaciones_update" name="Actualizar con user_id">
+      <bpmn:documentation>Fuente: server/src/controllers/notification.controller.js:26-32</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Node_leer-notificaciones_found" name="Es propia?">
+      <bpmn:documentation>Fuente: server/src/controllers/notification.controller.js:34</bpmn:documentation>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Node_leer-notificaciones_missing" name="404 No propia">
+      <bpmn:documentation>Fuente: server/src/controllers/notification.controller.js:35</bpmn:documentation>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="Node_leer-notificaciones_done" name="200 Leída">
+      <bpmn:documentation>Fuente: server/src/controllers/notification.controller.js:38</bpmn:documentation>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_leer-notificaciones_1" sourceRef="Node_leer-notificaciones_start" targetRef="Node_leer-notificaciones_auth">
+      <bpmn:documentation>Fuente: client/src/components/layout/NotificationDrawer.jsx:10-24</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_leer-notificaciones_2" sourceRef="Node_leer-notificaciones_auth" targetRef="Node_leer-notificaciones_auth_ok">
+      <bpmn:documentation>Fuente: server/src/routes/notification.routes.js:8-11</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_leer-notificaciones_3" sourceRef="Node_leer-notificaciones_auth_ok" targetRef="Node_leer-notificaciones_auth_reject" name="No">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:11-26</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_leer-notificaciones_4" sourceRef="Node_leer-notificaciones_auth_ok" targetRef="Node_leer-notificaciones_list" name="Sí">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:17-21</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_leer-notificaciones_5" sourceRef="Node_leer-notificaciones_list" targetRef="Node_leer-notificaciones_display">
+      <bpmn:documentation>Fuente: client/src/components/layout/NotificationDrawer.jsx:97-118</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_leer-notificaciones_6" sourceRef="Node_leer-notificaciones_display" targetRef="Node_leer-notificaciones_read">
+      <bpmn:documentation>Fuente: client/src/components/layout/NotificationDrawer.jsx:115-117</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_leer-notificaciones_7" sourceRef="Node_leer-notificaciones_read" targetRef="Node_leer-notificaciones_update">
+      <bpmn:documentation>Fuente: client/src/components/layout/NotificationDrawer.jsx:36-46</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_leer-notificaciones_8" sourceRef="Node_leer-notificaciones_update" targetRef="Node_leer-notificaciones_found">
+      <bpmn:documentation>Fuente: server/src/controllers/notification.controller.js:26-34</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_leer-notificaciones_9" sourceRef="Node_leer-notificaciones_found" targetRef="Node_leer-notificaciones_missing" name="No">
+      <bpmn:documentation>Fuente: server/src/controllers/notification.controller.js:35</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_leer-notificaciones_10" sourceRef="Node_leer-notificaciones_found" targetRef="Node_leer-notificaciones_done" name="Sí">
+      <bpmn:documentation>Fuente: server/src/controllers/notification.controller.js:38</bpmn:documentation>
+    </bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_leer-notificaciones">
+    <bpmndi:BPMNPlane id="Plane_leer-notificaciones" bpmnElement="Process_leer-notificaciones">
+      <bpmndi:BPMNShape id="Shape_Lane_Usuario_leer-notificaciones" bpmnElement="Lane_Usuario_leer-notificaciones" isHorizontal="true">
+        <dc:Bounds x="20" y="90" width="2330" height="165" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Lane_Sistema_leer-notificaciones" bpmnElement="Lane_Sistema_leer-notificaciones" isHorizontal="true">
+        <dc:Bounds x="20" y="260" width="2330" height="235" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_leer-notificaciones_start" bpmnElement="Node_leer-notificaciones_start">
+        <dc:Bounds x="80" y="125" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_leer-notificaciones_auth" bpmnElement="Node_leer-notificaciones_auth">
+        <dc:Bounds x="270" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_leer-notificaciones_auth_ok" bpmnElement="Node_leer-notificaciones_auth_ok">
+        <dc:Bounds x="460" y="300" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_leer-notificaciones_auth_reject" bpmnElement="Node_leer-notificaciones_auth_reject">
+        <dc:Bounds x="650" y="430" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_leer-notificaciones_list" bpmnElement="Node_leer-notificaciones_list">
+        <dc:Bounds x="840" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_leer-notificaciones_display" bpmnElement="Node_leer-notificaciones_display">
+        <dc:Bounds x="1030" y="125" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_leer-notificaciones_read" bpmnElement="Node_leer-notificaciones_read">
+        <dc:Bounds x="1220" y="125" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_leer-notificaciones_update" bpmnElement="Node_leer-notificaciones_update">
+        <dc:Bounds x="1410" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_leer-notificaciones_found" bpmnElement="Node_leer-notificaciones_found">
+        <dc:Bounds x="1600" y="300" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_leer-notificaciones_missing" bpmnElement="Node_leer-notificaciones_missing">
+        <dc:Bounds x="1790" y="430" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_leer-notificaciones_done" bpmnElement="Node_leer-notificaciones_done">
+        <dc:Bounds x="1980" y="300" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_leer-notificaciones_1" bpmnElement="Flow_leer-notificaciones_1">
+        <di:waypoint x="116" y="143.0" />
+        <di:waypoint x="193.0" y="143.0" />
+        <di:waypoint x="193.0" y="340.0" />
+        <di:waypoint x="270" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_leer-notificaciones_2" bpmnElement="Flow_leer-notificaciones_2">
+        <di:waypoint x="425" y="340.0" />
+        <di:waypoint x="460" y="325.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_leer-notificaciones_3" bpmnElement="Flow_leer-notificaciones_3">
+        <di:waypoint x="510" y="325.0" />
+        <di:waypoint x="580.0" y="325.0" />
+        <di:waypoint x="580.0" y="448.0" />
+        <di:waypoint x="650" y="448.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_leer-notificaciones_4" bpmnElement="Flow_leer-notificaciones_4">
+        <di:waypoint x="510" y="325.0" />
+        <di:waypoint x="840" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_leer-notificaciones_5" bpmnElement="Flow_leer-notificaciones_5">
+        <di:waypoint x="995" y="340.0" />
+        <di:waypoint x="1012.5" y="340.0" />
+        <di:waypoint x="1012.5" y="165.0" />
+        <di:waypoint x="1030" y="165.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_leer-notificaciones_6" bpmnElement="Flow_leer-notificaciones_6">
+        <di:waypoint x="1185" y="165.0" />
+        <di:waypoint x="1220" y="165.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_leer-notificaciones_7" bpmnElement="Flow_leer-notificaciones_7">
+        <di:waypoint x="1375" y="165.0" />
+        <di:waypoint x="1392.5" y="165.0" />
+        <di:waypoint x="1392.5" y="340.0" />
+        <di:waypoint x="1410" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_leer-notificaciones_8" bpmnElement="Flow_leer-notificaciones_8">
+        <di:waypoint x="1565" y="340.0" />
+        <di:waypoint x="1600" y="325.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_leer-notificaciones_9" bpmnElement="Flow_leer-notificaciones_9">
+        <di:waypoint x="1650" y="325.0" />
+        <di:waypoint x="1720.0" y="325.0" />
+        <di:waypoint x="1720.0" y="448.0" />
+        <di:waypoint x="1790" y="448.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_leer-notificaciones_10" bpmnElement="Flow_leer-notificaciones_10">
+        <di:waypoint x="1650" y="325.0" />
+        <di:waypoint x="1980" y="318.0" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

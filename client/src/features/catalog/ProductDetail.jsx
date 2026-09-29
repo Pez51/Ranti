@@ -1,126 +1,81 @@
-import { Calendar, ShieldCheck, MapPin, User, AlertCircle } from 'lucide-react';
+import { ShieldCheck, User, AlertCircle, PackageSearch } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { apiRequest } from '../../lib/api';
 
 export default function ProductDetail() {
-  const { id } = useParams(); // Captura el ID de la URL
+  const { id } = useParams();
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadProduct = async () => {
+      try {
+        setProduct(await apiRequest(`/publications/${id}`, { signal: controller.signal }));
+      } catch (requestError) {
+        if (requestError.name !== 'AbortError') setError(requestError.message);
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    };
+    loadProduct();
+    return () => controller.abort();
+  }, [id]);
+
+  if (loading) return <p className="py-20 text-center font-bold text-gray-500">Cargando publicación…</p>;
+  if (error || !product) return (
+    <div role="alert" className="my-12 text-center py-16 bg-red-50 rounded-3xl border-4 border-red-300">
+      <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
+      <h2 className="text-2xl font-display font-bold">No se pudo cargar la publicación</h2>
+      <p className="font-bold text-red-700 mt-2">{error}</p>
+      <Link to="/" className="inline-block mt-6 underline font-bold">Volver al catálogo</Link>
+    </div>
+  );
+
+  const primaryImage = product.images?.find((image) => image.is_primary)?.image_url || product.images?.[0]?.image_url;
+  const price = product.modality === 'Préstamo' ? 'Gratis' : `S/ ${Number(product.price).toFixed(2)}`;
 
   return (
     <div className="py-6 max-w-6xl mx-auto">
-      
-      {/* Botón volver */}
-      <Link to="/" className="inline-block mb-6 text-ranti-ink font-bold hover:underline underline-offset-4 border-2 border-transparent hover:border-ranti-ink px-4 py-2 rounded-full transition-all">
-        ← Volver al catálogo
-      </Link>
-
+      <Link to="/" className="inline-block mb-6 text-ranti-ink font-bold hover:underline underline-offset-4 px-4 py-2">← Volver al catálogo</Link>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* COLUMNA IZQUIERDA: Fotos e Información */}
         <div className="lg:col-span-2 space-y-8">
-          
-          {/* Galería / Imagen Principal */}
-          <div className="bg-blue-50 aspect-video rounded-3xl border-4 border-ranti-ink shadow-solid flex items-center justify-center relative overflow-hidden">
-            <span className="absolute top-4 left-4 bg-yellow-300 text-ranti-ink text-sm font-display font-bold px-4 py-2 rounded-full border-4 border-ranti-ink shadow-solid-sm">
-              Alquiler
-            </span>
-            <span className="text-6xl font-display font-bold text-ranti-ink opacity-20">
-              FOTO PRINCIPAL
-            </span>
+          <div className="bg-gray-100 aspect-video rounded-3xl border-4 border-ranti-ink shadow-solid flex items-center justify-center relative overflow-hidden">
+            <span className="absolute z-10 top-4 left-4 bg-yellow-300 text-ranti-ink text-sm font-display font-bold px-4 py-2 rounded-full border-4 border-ranti-ink shadow-solid-sm">{product.modality}</span>
+            {primaryImage ? <img src={primaryImage} alt={product.title} className="w-full h-full object-cover" /> : <PackageSearch size={80} className="text-gray-300" />}
           </div>
-
-          {/* Información del Equipo */}
           <div className="bg-white p-8 rounded-3xl border-4 border-ranti-ink shadow-solid">
             <div className="flex items-center gap-2 mb-2">
-              <span className="bg-ranti-light text-ranti-dark font-bold text-xs px-3 py-1 rounded-full border-2 border-ranti-ink uppercase">
-                Ing. Civil
-              </span>
-              <span className="text-gray-500 font-bold text-sm flex items-center gap-1">
-                <MapPin size={16}/> Campus Central
-              </span>
+              <span className="bg-ranti-light text-ranti-dark font-bold text-xs px-3 py-1 rounded-full border-2 border-ranti-ink uppercase">{product.category}</span>
+              <span className="text-gray-500 font-bold text-sm">{product.condition}</span>
             </div>
-            
-            <h1 className="text-4xl font-display font-bold text-ranti-ink mb-4 leading-tight">
-              Estación Total Topográfica Leica TS06 (Equipo {id})
-            </h1>
-            
-            <p className="text-lg font-body font-semibold text-gray-600 mb-6">
-              Equipo de alta precisión ideal para prácticas de topografía de 6to semestre. Incluye trípode, prisma y bastón. Calibración vigente hasta 2027.
-            </p>
-
-            <div className="border-t-4 border-ranti-ink pt-6 flex items-center justify-between">
-              {/* Señales de confianza del Oferente (UC-17) */}
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-green-200 rounded-full border-4 border-ranti-ink flex items-center justify-center">
-                  <User size={28} className="text-ranti-ink" />
-                </div>
-                <div>
-                  <p className="font-display font-bold text-lg leading-none mb-1">Carlos Mendoza</p>
-                  <p className="text-sm font-bold text-gray-500">Estudiante Verificado • 4.8 ⭐</p>
-                </div>
+            <h1 className="text-4xl font-display font-bold text-ranti-ink mb-4 leading-tight">{product.title}</h1>
+            <p className="text-lg font-body font-semibold text-gray-600 mb-6 whitespace-pre-wrap">{product.description}</p>
+            <div className="border-t-4 border-ranti-ink pt-6 flex items-center gap-4">
+              <div className="w-14 h-14 bg-green-200 rounded-full border-4 border-ranti-ink flex items-center justify-center"><User size={28} /></div>
+              <div>
+                <p className="font-display font-bold text-lg">Oferente UCSM</p>
+                <p className="text-sm font-bold text-gray-500">Reputación: {Number(product.owner_reputation_score).toFixed(1)} / 5</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* COLUMNA DERECHA: Cotizador y Fechas (Sticky) */}
         <div className="lg:col-span-1">
-          <div className="bg-white p-6 rounded-3xl border-4 border-ranti-ink shadow-solid sticky top-6">
-            
-            <h3 className="font-display font-bold text-3xl text-ranti-ink mb-2">
-              S/ 25.00 <span className="text-lg text-gray-500">/día</span>
-            </h3>
-            
-            <div className="bg-gray-50 p-4 rounded-2xl border-4 border-ranti-ink mb-6 flex items-start gap-3">
-              <ShieldCheck size={24} className="text-ranti-secondary flex-shrink-0" />
-              <p className="text-sm font-bold text-gray-600">
-                Garantía requerida de S/ 150.00. Se retendrá en tu tarjeta y se liberará al devolver el equipo.
-              </p>
-            </div>
-
-            {/* Selectores de Fecha (UC-06 Bloqueo de Disponibilidad) */}
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block font-bold text-sm text-ranti-ink mb-2">Fecha de Retiro</label>
-                <div className="flex items-center bg-white border-4 border-ranti-ink rounded-xl px-4 py-3 focus-within:shadow-solid-sm transition-all">
-                  <Calendar size={20} className="text-gray-400 mr-2" />
-                  <input type="date" className="w-full outline-none font-body font-bold text-ranti-ink bg-transparent" />
-                </div>
+          <div className="bg-white p-6 rounded-3xl border-4 border-ranti-ink shadow-solid sticky top-32">
+            <h3 className="font-display font-bold text-3xl text-ranti-ink mb-4">{price}{product.modality === 'Alquiler' && <span className="text-lg text-gray-500"> /día</span>}</h3>
+            {Number(product.guarantee_amount) > 0 && (
+              <div className="bg-gray-50 p-4 rounded-2xl border-4 border-ranti-ink mb-6 flex items-start gap-3">
+                <ShieldCheck size={24} className="text-ranti-secondary flex-shrink-0" />
+                <p className="text-sm font-bold text-gray-600">Garantía propuesta: S/ {Number(product.guarantee_amount).toFixed(2)}. El cobro y la custodia aún no están habilitados.</p>
               </div>
-              <div>
-                <label className="block font-bold text-sm text-ranti-ink mb-2">Fecha de Devolución</label>
-                <div className="flex items-center bg-white border-4 border-ranti-ink rounded-xl px-4 py-3 focus-within:shadow-solid-sm transition-all">
-                  <Calendar size={20} className="text-gray-400 mr-2" />
-                  <input type="date" className="w-full outline-none font-body font-bold text-ranti-ink bg-transparent" />
-                </div>
-              </div>
-            </div>
-
-            {/* Desglose de Precios */}
-            <div className="border-t-4 border-ranti-ink pt-4 mb-6 space-y-2 font-bold text-sm text-gray-600">
-              <div className="flex justify-between">
-                <span>S/ 25.00 x 3 días</span>
-                <span>S/ 75.00</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Comisión de Servicio (5%)</span>
-                <span>S/ 3.75</span>
-              </div>
-              <div className="flex justify-between pt-2 border-t-2 border-gray-200 text-lg text-ranti-ink font-display">
-                <span>Total a Pagar</span>
-                <span>S/ 78.75</span>
-              </div>
-            </div>
-
-            {/* Botón Solicitar */}
-            <Link to={`/checkout/${id}`} className="block text-center bg-yellow-300 text-ranti-ink px-6 py-4 rounded-xl border-4 border-ranti-ink font-display font-bold text-xl shadow-solid hover:-translate-y-1 hover:shadow-solid-hover active:translate-y-1 active:shadow-none transition-all">
-              Solicitar Reserva
-            </Link>
-
-            <p className="text-xs font-bold text-gray-400 text-center mt-4 flex items-center justify-center gap-1">
-              <AlertCircle size={14}/> No se te cobrará aún.
-            </p>
+            )}
+            <button type="button" disabled className="w-full bg-gray-200 text-gray-500 px-6 py-4 rounded-xl border-4 border-gray-400 font-display font-bold text-xl cursor-not-allowed">Solicitudes próximamente</button>
+            <p className="text-xs font-bold text-gray-400 text-center mt-4 flex items-center justify-center gap-1"><AlertCircle size={14}/> No se realizará ningún cobro.</p>
           </div>
         </div>
-
       </div>
     </div>
   );

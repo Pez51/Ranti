@@ -1,54 +1,42 @@
 import { X, Bell, DollarSign, AlertTriangle, Info, CheckCircle2 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { apiRequest } from '../../lib/api';
+import { getSession } from '../../lib/auth';
 
 export default function NotificationDrawer({ isOpen, onClose }) {
   const [filter, setFilter] = useState('todas');
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Cargar notificaciones reales desde el backend
-  useEffect(() => {
-    if (isOpen) {
-      fetchNotifications();
-    }
-  }, [isOpen]);
-
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token'); // Asume que guardaste el token aquí en el Login
-      const response = await fetch('http://localhost:3000/api/notifications', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setNotifications(data);
-      }
+      const token = getSession()?.token;
+      if (!token) return setNotifications([]);
+      setNotifications(await apiRequest('/notifications', { token }));
     } catch (error) {
       console.error('Error fetching notifications:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Cargar notificaciones reales desde el backend
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(fetchNotifications, 0);
+    return () => clearTimeout(timer);
+  }, [isOpen, fetchNotifications]);
 
   const handleMarkAsRead = async (id) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:3000/api/notifications/${id}/read`, {
+      const token = getSession()?.token;
+      if (!token) return;
+      await apiRequest(`/notifications/${id}/read`, {
         method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        token,
       });
-      
-      if (response.ok) {
-        // Actualizar el estado local para reflejar el cambio sin recargar todo
-        setNotifications(prev => 
-          prev.map(notif => notif.id === id ? { ...notif, status: 'Leida' } : notif)
-        );
-      }
+      setNotifications(prev => prev.map(notif => notif.id === id ? { ...notif, status: 'Leida' } : notif));
     } catch (error) {
       console.error('Error marcando como leída:', error);
     }

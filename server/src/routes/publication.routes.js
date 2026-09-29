@@ -4,7 +4,7 @@ import {
   getPublicationById, 
   createPublication 
 } from '../controllers/publication.controller.js';
-import { requireAuth } from '../middlewares/auth.middleware.js';
+import { requireAuth, requireVerifiedAccount } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
@@ -15,6 +15,6 @@ router.get('/:id', getPublicationById);
 
 // Rutas Protegidas (Requieren Token de Sesión)
 // Exclusivo para estudiantes/egresados autenticados
-router.post('/', requireAuth, createPublication);
+router.post('/', requireAuth, requireVerifiedAccount, createPublication);
 
 export default router;

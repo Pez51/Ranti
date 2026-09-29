@@ -1,0 +1,271 @@
+<?xml version='1.0' encoding='utf-8'?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_crear-operacion" targetNamespace="https://ranti.local/processes">
+  <bpmn:process id="Process_crear-operacion" name="Crear operación y reserva" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_crear-operacion">
+      <bpmn:lane id="Lane_Usuario_crear-operacion" name="Usuario">
+        <bpmn:flowNodeRef>Node_crear-operacion_start</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Sistema_crear-operacion" name="Sistema">
+        <bpmn:flowNodeRef>Node_crear-operacion_auth</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_auth_ok</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_auth_reject</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_begin</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_lock</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_eligible</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_reject</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_overlap</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_free</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_conflict</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_snapshot</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_insert</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_reserve</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_commit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_done</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_crear-operacion_failure</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Node_crear-operacion_start" name="Solicitar operación">
+      <bpmn:documentation>Fuente: server/src/routes/operation.routes.js:11</bpmn:documentation>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="Node_crear-operacion_auth" name="Validar JWT">
+      <bpmn:documentation>Fuente: server/src/routes/operation.routes.js:8; server/src/middlewares/auth.middleware.js:6</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Node_crear-operacion_auth_ok" name="Token válido?">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:11-26</bpmn:documentation>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Node_crear-operacion_auth_reject" name="401/403 Rechazo">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:11-26</bpmn:documentation>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Node_crear-operacion_begin" name="Iniciar transacción">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Node_crear-operacion_lock" name="Bloquear publicación">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Node_crear-operacion_eligible" name="Existe y otro dueño?">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Node_crear-operacion_reject" name="404/400 Rechazo">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Node_crear-operacion_overlap" name="Consultar solapamiento">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Node_crear-operacion_free" name="Disponible?">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Node_crear-operacion_conflict" name="409 Reserva ocupada">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Node_crear-operacion_snapshot" name="Crear snapshot y OTP">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Node_crear-operacion_insert" name="Insertar operación">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Node_crear-operacion_reserve" name="Insertar reserva si aplica">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Node_crear-operacion_commit" name="Confirmar transacción">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="Node_crear-operacion_done" name="201 Operación creada">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="Node_crear-operacion_failure" name="500 Reversión">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_1" sourceRef="Node_crear-operacion_start" targetRef="Node_crear-operacion_auth">
+      <bpmn:documentation>Fuente: server/src/routes/operation.routes.js:8-11</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_2" sourceRef="Node_crear-operacion_auth" targetRef="Node_crear-operacion_auth_ok">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:6-26</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_3" sourceRef="Node_crear-operacion_auth_ok" targetRef="Node_crear-operacion_auth_reject" name="No">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:11-26</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_4" sourceRef="Node_crear-operacion_auth_ok" targetRef="Node_crear-operacion_begin" name="Sí">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:17-21</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_5" sourceRef="Node_crear-operacion_begin" targetRef="Node_crear-operacion_lock">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_6" sourceRef="Node_crear-operacion_lock" targetRef="Node_crear-operacion_eligible">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_7" sourceRef="Node_crear-operacion_eligible" targetRef="Node_crear-operacion_reject" name="No">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_8" sourceRef="Node_crear-operacion_eligible" targetRef="Node_crear-operacion_overlap" name="Sí">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_9" sourceRef="Node_crear-operacion_overlap" targetRef="Node_crear-operacion_free">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_10" sourceRef="Node_crear-operacion_free" targetRef="Node_crear-operacion_conflict" name="No">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_11" sourceRef="Node_crear-operacion_free" targetRef="Node_crear-operacion_snapshot" name="Sí">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_12" sourceRef="Node_crear-operacion_snapshot" targetRef="Node_crear-operacion_insert">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_13" sourceRef="Node_crear-operacion_insert" targetRef="Node_crear-operacion_reserve">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_14" sourceRef="Node_crear-operacion_reserve" targetRef="Node_crear-operacion_commit">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_15" sourceRef="Node_crear-operacion_commit" targetRef="Node_crear-operacion_done">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_16" sourceRef="Node_crear-operacion_insert" targetRef="Node_crear-operacion_failure" name="Error SQL">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_crear-operacion_17" sourceRef="Node_crear-operacion_reserve" targetRef="Node_crear-operacion_failure" name="Error SQL">
+      <bpmn:documentation>Fuente: server/src/controllers/operation.controller.js::createOperation</bpmn:documentation>
+    </bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_crear-operacion">
+    <bpmndi:BPMNPlane id="Plane_crear-operacion" bpmnElement="Process_crear-operacion">
+      <bpmndi:BPMNShape id="Shape_Lane_Usuario_crear-operacion" bpmnElement="Lane_Usuario_crear-operacion" isHorizontal="true">
+        <dc:Bounds x="20" y="90" width="3470" height="165" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Lane_Sistema_crear-operacion" bpmnElement="Lane_Sistema_crear-operacion" isHorizontal="true">
+        <dc:Bounds x="20" y="260" width="3470" height="235" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_start" bpmnElement="Node_crear-operacion_start">
+        <dc:Bounds x="80" y="125" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_auth" bpmnElement="Node_crear-operacion_auth">
+        <dc:Bounds x="270" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_auth_ok" bpmnElement="Node_crear-operacion_auth_ok">
+        <dc:Bounds x="460" y="300" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_auth_reject" bpmnElement="Node_crear-operacion_auth_reject">
+        <dc:Bounds x="650" y="430" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_begin" bpmnElement="Node_crear-operacion_begin">
+        <dc:Bounds x="840" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_lock" bpmnElement="Node_crear-operacion_lock">
+        <dc:Bounds x="1030" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_eligible" bpmnElement="Node_crear-operacion_eligible">
+        <dc:Bounds x="1220" y="300" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_reject" bpmnElement="Node_crear-operacion_reject">
+        <dc:Bounds x="1410" y="430" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_overlap" bpmnElement="Node_crear-operacion_overlap">
+        <dc:Bounds x="1600" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_free" bpmnElement="Node_crear-operacion_free">
+        <dc:Bounds x="1790" y="300" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_conflict" bpmnElement="Node_crear-operacion_conflict">
+        <dc:Bounds x="1980" y="430" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_snapshot" bpmnElement="Node_crear-operacion_snapshot">
+        <dc:Bounds x="2170" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_insert" bpmnElement="Node_crear-operacion_insert">
+        <dc:Bounds x="2360" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_reserve" bpmnElement="Node_crear-operacion_reserve">
+        <dc:Bounds x="2550" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_commit" bpmnElement="Node_crear-operacion_commit">
+        <dc:Bounds x="2740" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_done" bpmnElement="Node_crear-operacion_done">
+        <dc:Bounds x="2930" y="300" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_crear-operacion_failure" bpmnElement="Node_crear-operacion_failure">
+        <dc:Bounds x="3120" y="430" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_1" bpmnElement="Flow_crear-operacion_1">
+        <di:waypoint x="116" y="143.0" />
+        <di:waypoint x="193.0" y="143.0" />
+        <di:waypoint x="193.0" y="340.0" />
+        <di:waypoint x="270" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_2" bpmnElement="Flow_crear-operacion_2">
+        <di:waypoint x="425" y="340.0" />
+        <di:waypoint x="460" y="325.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_3" bpmnElement="Flow_crear-operacion_3">
+        <di:waypoint x="510" y="325.0" />
+        <di:waypoint x="580.0" y="325.0" />
+        <di:waypoint x="580.0" y="448.0" />
+        <di:waypoint x="650" y="448.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_4" bpmnElement="Flow_crear-operacion_4">
+        <di:waypoint x="510" y="325.0" />
+        <di:waypoint x="840" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_5" bpmnElement="Flow_crear-operacion_5">
+        <di:waypoint x="995" y="340.0" />
+        <di:waypoint x="1030" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_6" bpmnElement="Flow_crear-operacion_6">
+        <di:waypoint x="1185" y="340.0" />
+        <di:waypoint x="1220" y="325.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_7" bpmnElement="Flow_crear-operacion_7">
+        <di:waypoint x="1270" y="325.0" />
+        <di:waypoint x="1340.0" y="325.0" />
+        <di:waypoint x="1340.0" y="448.0" />
+        <di:waypoint x="1410" y="448.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_8" bpmnElement="Flow_crear-operacion_8">
+        <di:waypoint x="1270" y="325.0" />
+        <di:waypoint x="1600" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_9" bpmnElement="Flow_crear-operacion_9">
+        <di:waypoint x="1755" y="340.0" />
+        <di:waypoint x="1790" y="325.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_10" bpmnElement="Flow_crear-operacion_10">
+        <di:waypoint x="1840" y="325.0" />
+        <di:waypoint x="1910.0" y="325.0" />
+        <di:waypoint x="1910.0" y="448.0" />
+        <di:waypoint x="1980" y="448.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_11" bpmnElement="Flow_crear-operacion_11">
+        <di:waypoint x="1840" y="325.0" />
+        <di:waypoint x="2170" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_12" bpmnElement="Flow_crear-operacion_12">
+        <di:waypoint x="2325" y="340.0" />
+        <di:waypoint x="2360" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_13" bpmnElement="Flow_crear-operacion_13">
+        <di:waypoint x="2515" y="340.0" />
+        <di:waypoint x="2550" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_14" bpmnElement="Flow_crear-operacion_14">
+        <di:waypoint x="2705" y="340.0" />
+        <di:waypoint x="2740" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_15" bpmnElement="Flow_crear-operacion_15">
+        <di:waypoint x="2895" y="340.0" />
+        <di:waypoint x="2930" y="318.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_16" bpmnElement="Flow_crear-operacion_16">
+        <di:waypoint x="2515" y="340.0" />
+        <di:waypoint x="2817.5" y="340.0" />
+        <di:waypoint x="2817.5" y="448.0" />
+        <di:waypoint x="3120" y="448.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_crear-operacion_17" bpmnElement="Flow_crear-operacion_17">
+        <di:waypoint x="2705" y="340.0" />
+        <di:waypoint x="2912.5" y="340.0" />
+        <di:waypoint x="2912.5" y="448.0" />
+        <di:waypoint x="3120" y="448.0" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

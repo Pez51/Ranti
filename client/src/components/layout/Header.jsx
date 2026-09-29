@@ -1,21 +1,35 @@
-import { Search, Menu, ShoppingCart, User, Bell } from 'lucide-react';
+import { Search, Menu, User, Bell } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import NotificationDrawer from './NotificationDrawer';
 import MenuDrawer from './MenuDrawer';
-import CartDrawer from './CartDrawer';
+import { clearSession, getSession } from '../../lib/auth';
 
 export default function Header() {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isCartOpen, setIsCartOpen] = useState(false);
-  
-  // Simulación de sesión (Cambia a false para ver el botón "Ingresar")
-  const [isLoggedIn, setIsLoggedIn] = useState(true); 
+  const [session, setSession] = useState(() => getSession());
+  const isLoggedIn = Boolean(session);
   
   // Lógica del Buscador
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const refreshSession = () => setSession(getSession());
+    window.addEventListener('ranti-auth-changed', refreshSession);
+    window.addEventListener('storage', refreshSession);
+    return () => {
+      window.removeEventListener('ranti-auth-changed', refreshSession);
+      window.removeEventListener('storage', refreshSession);
+    };
+  }, []);
+
+  const handleLogout = () => {
+    clearSession();
+    setIsMenuOpen(false);
+    navigate('/login');
+  };
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -46,14 +60,8 @@ export default function Header() {
                 {isLoggedIn && (
                   <button onClick={() => setIsNotifOpen(true)} className="bg-yellow-300 text-ranti-ink p-2 rounded-full border-4 border-ranti-ink shadow-solid hover:bg-yellow-400 transition-all relative active:translate-y-1 active:shadow-solid-sm">
                     <Bell size={20} strokeWidth={2.5} />
-                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full border-2 border-ranti-ink">3</span>
                   </button>
                 )}
-                
-                <button onClick={() => setIsCartOpen(true)} className="bg-white text-ranti-ink p-2 rounded-full border-4 border-ranti-ink shadow-solid hover:bg-gray-100 transition-all active:translate-y-1 active:shadow-solid-sm relative">
-                  <ShoppingCart size={20} strokeWidth={2.5} />
-                  <span className="absolute -top-2 -right-2 bg-ranti-primary text-ranti-ink text-xs font-bold px-2 py-0.5 rounded-full border-2 border-ranti-ink">1</span>
-                </button>
 
                 <div className="hidden sm:flex gap-2">
                   {!isLoggedIn ? (
@@ -63,7 +71,7 @@ export default function Header() {
                     </Link>
                   ) : (
                     <div className="w-11 h-11 bg-pink-200 rounded-full border-4 border-ranti-ink shadow-solid overflow-hidden flex items-center justify-center cursor-pointer" onClick={() => setIsMenuOpen(true)}>
-                      <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Perfil" className="w-full h-full object-cover" />
+                      <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(session.user.email)}`} alt="Perfil" className="w-full h-full object-cover" />
                     </div>
                   )}
                 </div>
@@ -95,8 +103,7 @@ export default function Header() {
       </div>
 
       <NotificationDrawer isOpen={isNotifOpen} onClose={() => setIsNotifOpen(false)} />
-      <MenuDrawer isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} isLoggedIn={isLoggedIn} />
-      <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
+      <MenuDrawer isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} isLoggedIn={isLoggedIn} user={session?.user} onLogout={handleLogout} />
     </>
   );
 }

@@ -1,0 +1,169 @@
+<?xml version='1.0' encoding='utf-8'?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_publicar-bien" targetNamespace="https://ranti.local/processes">
+  <bpmn:process id="Process_publicar-bien" name="Publicar bien" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_publicar-bien">
+      <bpmn:lane id="Lane_Usuario_publicar-bien" name="Usuario">
+        <bpmn:flowNodeRef>Node_publicar-bien_start</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Sistema_publicar-bien" name="Sistema">
+        <bpmn:flowNodeRef>Node_publicar-bien_auth</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_publicar-bien_authorized</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_publicar-bien_reject</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_publicar-bien_begin</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_publicar-bien_insert</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_publicar-bien_images</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_publicar-bien_commit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_publicar-bien_done</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Node_publicar-bien_failure</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Node_publicar-bien_start" name="Enviar publicación">
+      <bpmn:documentation>Fuente: server/src/routes/publication.routes.js:18</bpmn:documentation>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="Node_publicar-bien_auth" name="Validar JWT">
+      <bpmn:documentation>Fuente: server/src/routes/publication.routes.js:17; server/src/middlewares/auth.middleware.js:6</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Node_publicar-bien_authorized" name="Token válido?">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:11-26</bpmn:documentation>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Node_publicar-bien_reject" name="401/403 Rechazo">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:11-26</bpmn:documentation>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Node_publicar-bien_begin" name="Iniciar transacción">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Node_publicar-bien_insert" name="Insertar publicación Activa">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Node_publicar-bien_images" name="Insertar URLs de imágenes">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Node_publicar-bien_commit" name="Confirmar transacción">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="Node_publicar-bien_done" name="201 Publicada">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="Node_publicar-bien_failure" name="500 Reversión">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_publicar-bien_1" sourceRef="Node_publicar-bien_start" targetRef="Node_publicar-bien_auth">
+      <bpmn:documentation>Fuente: server/src/routes/publication.routes.js:18</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_publicar-bien_2" sourceRef="Node_publicar-bien_auth" targetRef="Node_publicar-bien_authorized">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:6-26</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_publicar-bien_3" sourceRef="Node_publicar-bien_authorized" targetRef="Node_publicar-bien_reject" name="No">
+      <bpmn:documentation>Fuente: server/src/middlewares/auth.middleware.js:11-26</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_publicar-bien_4" sourceRef="Node_publicar-bien_authorized" targetRef="Node_publicar-bien_begin" name="Sí">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_publicar-bien_5" sourceRef="Node_publicar-bien_begin" targetRef="Node_publicar-bien_insert">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_publicar-bien_6" sourceRef="Node_publicar-bien_insert" targetRef="Node_publicar-bien_images">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_publicar-bien_7" sourceRef="Node_publicar-bien_images" targetRef="Node_publicar-bien_commit">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_publicar-bien_8" sourceRef="Node_publicar-bien_commit" targetRef="Node_publicar-bien_done">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_publicar-bien_9" sourceRef="Node_publicar-bien_insert" targetRef="Node_publicar-bien_failure" name="Error SQL">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_publicar-bien_10" sourceRef="Node_publicar-bien_images" targetRef="Node_publicar-bien_failure" name="Error SQL">
+      <bpmn:documentation>Fuente: server/src/controllers/publication.controller.js::createPublication</bpmn:documentation>
+    </bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_publicar-bien">
+    <bpmndi:BPMNPlane id="Plane_publicar-bien" bpmnElement="Process_publicar-bien">
+      <bpmndi:BPMNShape id="Shape_Lane_Usuario_publicar-bien" bpmnElement="Lane_Usuario_publicar-bien" isHorizontal="true">
+        <dc:Bounds x="20" y="90" width="2140" height="165" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Lane_Sistema_publicar-bien" bpmnElement="Lane_Sistema_publicar-bien" isHorizontal="true">
+        <dc:Bounds x="20" y="260" width="2140" height="235" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_publicar-bien_start" bpmnElement="Node_publicar-bien_start">
+        <dc:Bounds x="80" y="125" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_publicar-bien_auth" bpmnElement="Node_publicar-bien_auth">
+        <dc:Bounds x="270" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_publicar-bien_authorized" bpmnElement="Node_publicar-bien_authorized">
+        <dc:Bounds x="460" y="300" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_publicar-bien_reject" bpmnElement="Node_publicar-bien_reject">
+        <dc:Bounds x="650" y="430" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_publicar-bien_begin" bpmnElement="Node_publicar-bien_begin">
+        <dc:Bounds x="840" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_publicar-bien_insert" bpmnElement="Node_publicar-bien_insert">
+        <dc:Bounds x="1030" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_publicar-bien_images" bpmnElement="Node_publicar-bien_images">
+        <dc:Bounds x="1220" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_publicar-bien_commit" bpmnElement="Node_publicar-bien_commit">
+        <dc:Bounds x="1410" y="300" width="155" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_publicar-bien_done" bpmnElement="Node_publicar-bien_done">
+        <dc:Bounds x="1600" y="300" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_publicar-bien_failure" bpmnElement="Node_publicar-bien_failure">
+        <dc:Bounds x="1790" y="430" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_publicar-bien_1" bpmnElement="Flow_publicar-bien_1">
+        <di:waypoint x="116" y="143.0" />
+        <di:waypoint x="193.0" y="143.0" />
+        <di:waypoint x="193.0" y="340.0" />
+        <di:waypoint x="270" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_publicar-bien_2" bpmnElement="Flow_publicar-bien_2">
+        <di:waypoint x="425" y="340.0" />
+        <di:waypoint x="460" y="325.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_publicar-bien_3" bpmnElement="Flow_publicar-bien_3">
+        <di:waypoint x="510" y="325.0" />
+        <di:waypoint x="580.0" y="325.0" />
+        <di:waypoint x="580.0" y="448.0" />
+        <di:waypoint x="650" y="448.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_publicar-bien_4" bpmnElement="Flow_publicar-bien_4">
+        <di:waypoint x="510" y="325.0" />
+        <di:waypoint x="840" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_publicar-bien_5" bpmnElement="Flow_publicar-bien_5">
+        <di:waypoint x="995" y="340.0" />
+        <di:waypoint x="1030" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_publicar-bien_6" bpmnElement="Flow_publicar-bien_6">
+        <di:waypoint x="1185" y="340.0" />
+        <di:waypoint x="1220" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_publicar-bien_7" bpmnElement="Flow_publicar-bien_7">
+        <di:waypoint x="1375" y="340.0" />
+        <di:waypoint x="1410" y="340.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_publicar-bien_8" bpmnElement="Flow_publicar-bien_8">
+        <di:waypoint x="1565" y="340.0" />
+        <di:waypoint x="1600" y="318.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_publicar-bien_9" bpmnElement="Flow_publicar-bien_9">
+        <di:waypoint x="1185" y="340.0" />
+        <di:waypoint x="1487.5" y="340.0" />
+        <di:waypoint x="1487.5" y="448.0" />
+        <di:waypoint x="1790" y="448.0" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_publicar-bien_10" bpmnElement="Flow_publicar-bien_10">
+        <di:waypoint x="1375" y="340.0" />
+        <di:waypoint x="1582.5" y="340.0" />
+        <di:waypoint x="1582.5" y="448.0" />
+        <di:waypoint x="1790" y="448.0" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

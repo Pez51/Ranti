@@ -25,6 +25,7 @@ export const testConnection = async () => {
     client.release();
   } catch (err) {
     console.error('❌ Error conectando a PostgreSQL:', err.message);
+    throw err;
   }
 };
 

@@ -1,11 +1,11 @@
 import express from 'express';
 import { createOperation, confirmDelivery } from '../controllers/operation.controller.js';
-import { requireAuth } from '../middlewares/auth.middleware.js';
+import { requireAuth, requireVerifiedAccount } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
 // Todas las rutas de operaciones son estrictamente privadas
-router.use(requireAuth);
+router.use(requireAuth, requireVerifiedAccount);
 
 // Crear una nueva reserva / operación
 router.post('/', createOperation);

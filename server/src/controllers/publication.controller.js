@@ -1,4 +1,24 @@
 import pool from '../config/database.js';
+import { z } from 'zod';
+
+const publicationId = z.uuid();
+const publicationInput = z.object({
+  title: z.string().trim().min(1).max(255),
+  description: z.string().trim().min(1).max(5000),
+  category: z.string().trim().min(1).max(100),
+  condition: z.string().trim().min(1).max(50),
+  modality: z.enum(['Venta', 'Alquiler', 'Préstamo']),
+  price: z.coerce.number().nonnegative().nullable().optional(),
+  guarantee_amount: z.coerce.number().nonnegative().nullable().optional(),
+  images: z.array(z.url()).max(4).optional().default([]),
+}).superRefine((value, context) => {
+  if (value.modality !== 'Préstamo' && !(value.price > 0)) {
+    context.addIssue({ code: 'custom', path: ['price'], message: 'El precio debe ser mayor que cero.' });
+  }
+  if (value.modality === 'Préstamo' && value.price != null && value.price !== 0) {
+    context.addIssue({ code: 'custom', path: ['price'], message: 'Un préstamo no admite precio de uso.' });
+  }
+});
 
 // Obtener todas las publicaciones (Catálogo Público con Filtros)
 export const getPublications = async (req, res) => {
@@ -6,7 +26,7 @@ export const getPublications = async (req, res) => {
     const { search, modality, faculty } = req.query;
     
     let query = `
-      SELECT p.id, p.title, p.faculty_category, p.modality, p.price, p.guarantee_amount, 
+      SELECT p.id, p.title, p.category, p.modality, p.price, p.guarantee_amount,
              pi.image_url as primary_image
       FROM publications p
       LEFT JOIN publication_images pi ON p.id = pi.publication_id AND pi.is_primary = true
@@ -31,7 +51,7 @@ export const getPublications = async (req, res) => {
 
     // Filtro por Facultad / Categoría
     if (faculty) {
-      query += ` AND p.faculty_category = $${paramIndex}`;
+      query += ` AND p.category = $${paramIndex}`;
       params.push(faculty);
       paramIndex++;
     }
@@ -49,14 +69,19 @@ export const getPublications = async (req, res) => {
 // Obtener detalle de una publicación específica
 export const getPublicationById = async (req, res) => {
   const { id } = req.params;
+  if (!publicationId.safeParse(id).success) {
+    return res.status(400).json({ error: 'El identificador de publicación no es válido.' });
+  }
 
   try {
     // 1. Obtener datos del equipo y del dueño
     const pubQuery = `
-      SELECT p.*, u.id as owner_id, u.email, u.reputation_score, u.academic_condition
+      SELECT p.id, p.title, p.description, p.category, p.condition,
+             p.modality, p.price, p.guarantee_amount, p.created_at,
+             u.reputation_score AS owner_reputation_score
       FROM publications p
       JOIN users u ON p.owner_id = u.id
-      WHERE p.id = $1
+      WHERE p.id = $1 AND p.status = 'Activa'
     `;
     const { rows: pubRows } = await pool.query(pubQuery, [id]);
 
@@ -80,19 +105,25 @@ export const getPublicationById = async (req, res) => {
 
 // Crear una nueva publicación (Ruta Protegida)
 export const createPublication = async (req, res) => {
-  const { title, description, category, condition, modality, price, guarantee_amount, images } = req.body;
+  const parsed = publicationInput.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { title, description, category, condition, modality, price, guarantee_amount, images } = parsed.data;
   // req.user viene del middleware de autenticación (auth.middleware.js)
   const owner_id = req.user.id; 
 
-  const client = await pool.connect();
+  let client;
+  let releaseError;
 
   try {
+    client = await pool.connect();
     // Iniciar transacción SQL para garantizar que todo se guarde (o nada si hay error)
     await client.query('BEGIN');
 
     // 1. Insertar la publicación principal
     const insertPubQuery = `
-      INSERT INTO publications (owner_id, title, description, faculty_category, condition, modality, price, guarantee_amount, status)
+      INSERT INTO publications (owner_id, title, description, category, condition, modality, price, guarantee_amount, status)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Activa')
       RETURNING *
     `;
@@ -121,11 +152,13 @@ export const createPublication = async (req, res) => {
     });
   } catch (error) {
     // Revertir cambios en caso de error (Rollback)
-    await client.query('ROLLBACK');
-    console.error('Error creando publicación:', error);
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch (rollbackError) { releaseError = rollbackError; }
+    }
+    console.error('Error creando publicación:', error.message);
     res.status(500).json({ error: 'Error al crear la publicación en la base de datos.' });
   } finally {
     // Liberar la conexión al pool
-    client.release();
+    client?.release(releaseError);
   }
 };

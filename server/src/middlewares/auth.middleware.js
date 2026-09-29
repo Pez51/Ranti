@@ -1,25 +1,46 @@
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import pool from '../config/database.js';
 
 dotenv.config();
 
-export const requireAuth = (req, res, next) => {
-  try {
-    // El token debe venir en la cabecera Authorization: Bearer <token>
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Acceso denegado. Token no proporcionado o formato inválido.' });
-    }
-
-    const token = authHeader.split(' ')[1];
-    
-    // Verificamos el token con nuestra clave secreta
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // Inyectamos los datos del usuario en la petición (req)
-    req.user = decoded;
-    next();
-  } catch (error) {
-    return res.status(403).json({ error: 'Token inválido o expirado. Inicia sesión nuevamente.' });
+export const requireAuth = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Acceso denegado. Token no proporcionado o formato inválido.' });
   }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    if (typeof decoded !== 'object' || typeof decoded.id !== 'string' ||
+        !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(decoded.id)) {
+      return res.status(401).json({ error: 'Sesión inválida. Inicia sesión nuevamente.' });
+    }
+  } catch {
+    return res.status(401).json({ error: 'Token inválido o expirado. Inicia sesión nuevamente.' });
+  }
+
+  try {
+    // Un JWT vigente no conserva permisos revocados después de su emisión.
+    const { rows } = await pool.query(
+      'SELECT id, role, status, verification_status FROM users WHERE id = $1',
+      [decoded.id],
+    );
+    if (!rows.length) return res.status(401).json({ error: 'La cuenta de esta sesión no existe.' });
+    if (rows[0].status === 'Suspendida') {
+      return res.status(403).json({ error: 'Tu cuenta está suspendida.' });
+    }
+    req.user = rows[0];
+  } catch {
+    return res.status(503).json({ error: 'No se pudo comprobar la sesión. Inténtalo nuevamente.' });
+  }
+  next();
+};
+
+export const requireVerifiedAccount = (req, res, next) => {
+  if (req.user?.status !== 'Activa' || req.user?.verification_status !== 'Verificado') {
+    return res.status(403).json({ error: 'Necesitas una cuenta activa y verificada para realizar esta acción.' });
+  }
+  next();
 };

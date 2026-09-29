@@ -1,7 +1,8 @@
 import { X, Package, ShieldCheck, LogOut, LogIn, Grid } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-export default function MenuDrawer({ isOpen, onClose, isLoggedIn }) {
+export default function MenuDrawer({ isOpen, onClose, isLoggedIn, user, onLogout }) {
+  const displayName = user?.email?.split('@')[0] || 'Usuario UCSM';
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-ranti-ink bg-opacity-40 z-40 transition-opacity" onClick={onClose} />}
@@ -12,11 +13,11 @@ export default function MenuDrawer({ isOpen, onClose, isLoggedIn }) {
           {isLoggedIn ? (
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-pink-200 rounded-full border-4 border-ranti-ink shadow-solid-sm overflow-hidden">
-                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Perfil" />
+                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user?.email || 'Ranti')}`} alt="Perfil" />
               </div>
               <div>
-                <p className="font-display font-bold text-white leading-tight">Felix UCSM</p>
-                <p className="text-xs font-bold text-ranti-ink bg-yellow-300 px-2 py-0.5 rounded-full inline-block border-2 border-ranti-ink mt-1">Estudiante</p>
+                <p className="font-display font-bold text-white leading-tight">{displayName}</p>
+                <p className="text-xs font-bold text-ranti-ink bg-yellow-300 px-2 py-0.5 rounded-full inline-block border-2 border-ranti-ink mt-1">{user?.role}</p>
               </div>
             </div>
           ) : (
@@ -55,7 +56,7 @@ export default function MenuDrawer({ isOpen, onClose, isLoggedIn }) {
 
         {isLoggedIn && (
           <div className="p-6 border-t-4 border-ranti-ink bg-white">
-            <button onClick={onClose} className="w-full flex justify-center items-center gap-2 bg-white text-red-600 px-6 py-4 rounded-xl border-4 border-ranti-ink font-bold hover:bg-red-50 transition-all">
+            <button onClick={onLogout} className="w-full flex justify-center items-center gap-2 bg-white text-red-600 px-6 py-4 rounded-xl border-4 border-ranti-ink font-bold hover:bg-red-50 transition-all">
               <LogOut size={20} /> Cerrar Sesión
             </button>
           </div>

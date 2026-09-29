@@ -7,66 +7,78 @@ Este proyecto utiliza una arquitectura moderna estructurada en un **Monorepo**:
 *   **Backend:** Node.js + Express (API REST).
 *   **Base de Datos:** PostgreSQL con soporte de bloqueos pesimistas (ACID).
 
+El sistema sigue en desarrollo. Las pantallas de pago y entrega muestran indisponibilidad: no procesan cobros, garantías ni confirmaciones. El [seguimiento de correcciones](docs/revision-informe.md) distingue lo implementado de los requisitos pendientes.
+
 ---
 
 ## 📋 1. Requisitos Previos del Sistema
 
 Asegúrate de tener instalado el siguiente software en tu dispositivo antes de comenzar:
-*   [Node.js](https://nodejs.org/es/) (Versión 20.0.0 o superior).
+*   [Node.js](https://nodejs.org/es/) 24.x (comprobado con 24.14.1). Node 20 no cumple los requisitos de la versión instalada de Vitest.
 *   [Git](https://git-scm.com/).
-*   [PostgreSQL](https://www.postgresql.org/) (Versión 15 o 16).
+*   [PostgreSQL](https://www.postgresql.org/) (integración comprobada con la versión 17).
 *   *Recomendado:* pgAdmin 4 o DBeaver para administrar la base de datos visualmente.
 
 ---
 
 ## 🗄️ 2. Configuración de la Base de Datos
 
-El núcleo transaccional de Ranti requiere una base de datos relacional para evitar reservas solapadas y mantener la bitácora de auditoría.
+Ranti utiliza PostgreSQL para publicaciones, operaciones y reservas. El esquema por sí solo no garantiza todavía la prevención de todos los solapamientos; consulta `docs/revision-informe.md` antes de probar operaciones reales.
 
 1. Abre tu gestor de base de datos (pgAdmin, DBeaver) o la terminal de PostgreSQL (`psql`).
 2. Crea una base de datos vacía llamada `ranti_db`:
    ```sql
    CREATE DATABASE ranti_db;
+   ```
 
-1. Conéctate a la base de datos ranti_db.
-2. Ejecuta el script de migración inicial. Abre el archivo ubicado en server/src/db/migrations/001_init_normalized.sql, copia todo su contenido y ejecútalo en la consola de consultas de tu base de datos. Esto creará automáticamente las 10 tablas y los tipos de datos (ENUMs) necesarios.   
+3. Conéctate a `ranti_db`.
+4. Ejecuta `server/src/db/migrations/001_init.sql` en esa base de datos. Es la migración inicial disponible en el repositorio.
 
-## ⚙️ 3. Configuración del Monorepo (package.json raíz)
-Para poder levantar el frontend y el backend al mismo tiempo con un solo comando, utilizamos la herramienta concurrently.Asegúrate de que en la raíz del proyecto exista un archivo llamado package.json con el siguiente contenido.
- Si no existe, créalo:
- JSON{
-  "name": "ranti-monorepo",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Plataforma de intercambio seguro de bienes universitarios - UCSM",
-  "scripts": {
-    "setup": "npm install && npm install --prefix server && npm install --prefix client",
-    "dev:server": "npm run dev --prefix server",
-    "dev:client": "npm run dev --prefix client",
-    "dev": "concurrently -c \"cyan.bold,green.bold\" \"npm run dev:server\" \"npm run dev:client\""
-  },
-  "devDependencies": {
-    "concurrently": "^8.2.2"
-  }
-}
-## 🔐 4. Variables de Entorno (Archivo .env)
-Las credenciales de acceso y configuraciones sensibles nunca deben subirse a GitHub. Cada desarrollador debe crear su propio archivo local en el backend.Dirígete a la carpeta server/.Crea un archivo nuevo y llámalo exactamente .env (sin nombre antes del punto).Pega el siguiente contenido y reemplaza tu_usuario y tu_contraseña con las credenciales locales de tu PostgreSQL:
-Fragmento de código# Configuración del servidor
+## ⚙️ 3. Instalación
+
+El `package.json` de la raíz ya contiene los scripts para cliente y servidor. Desde la raíz:
+
+```bash
+npm run setup
+```
+
+## 🔐 4. Variables de entorno
+
+Crea `server/.env` localmente. El archivo está excluido de Git. Usa tus credenciales de PostgreSQL y genera un secreto JWT largo y aleatorio; no copies un secreto de ejemplo a un despliegue.
+
+```dotenv
 PORT=3000
 NODE_ENV=development
+DATABASE_URL=postgres://USUARIO:CONTRASEÑA@localhost:5432/ranti_db
+JWT_SECRET=REEMPLAZAR_POR_UN_SECRETO_ALEATORIO
+```
 
-# Credenciales de Base de Datos PostgreSQL
-# Formato: postgres://USUARIO:CONTRASEÑA@localhost:5432/ranti_db
-DATABASE_URL=postgres://tu_usuario:tu_contraseña@localhost:5432/ranti_db
+El cliente usa `http://localhost:3000/api` por defecto. Para otra API, crea `client/.env.local`:
 
-# Secreto para la generación de Tokens de Sesión (JWT)
-JWT_SECRET=super_secreto_ranti_pfc_2026
-## ⚡ 5. Instalación y Levantamiento del Proyecto
-Gracias a la configuración del monorepo, puedes instalar y arrancar todo desde la raíz del proyecto.Paso A: Instalar todas las dependencias (Solo la primera vez o si hay paquetes nuevos)Abre la terminal en la raíz del proyecto y ejecuta:Bash
-npm run setup
-(Esto instalará concurrently y luego entrará a /client y /server para descargar sus respectivos node_modules).Paso B: Levantar Frontend y Backend juntosEn la misma terminal, ejecuta:Bash
-npm run dev
-Si todo está configurado correctamente, verás en tu terminal:
-✅ Base de datos conectada exitosamente.
-🚀 Backend (API): Escuchando en http://localhost:3000
-💻 Frontend (React): Disponible en http://localhost:5173
+```dotenv
+VITE_API_URL=https://api.ejemplo.test/api
+```
+
+## ⚡ 5. Desarrollo y pruebas
+
+Desde la raíz, `npm run dev` inicia la API y el cliente. Por defecto se sirven en `http://localhost:3000` y `http://localhost:5173`. La API necesita una base de datos configurada y no empieza a escuchar si PostgreSQL no responde.
+
+Desde `server`, `npm test` ejecuta 10 pruebas unitarias. Las 31 pruebas de integración se omiten si no se suministra la instancia temporal. Desde `client`, `npm run lint` comprueba el código y `npm run build` genera el frontend.
+
+En Windows, ejecuta desde la raíz para comprobar la API contra PostgreSQL real:
+
+```powershell
+.\tools\test-postgres.ps1
+# Si PostgreSQL está instalado en otra carpeta:
+.\tools\test-postgres.ps1 -PostgresBin 'C:\Program Files\PostgreSQL\16\bin'
+```
+
+El script crea una instancia exclusiva en una carpeta temporal, usa un puerto local libre, aplica la migración inicial y ejecuta los casos de catálogo, autorización, pagos pendientes y concurrencia de reservas/entregas. Detiene y elimina esa instancia al terminar; no modifica las bases de datos existentes ni usa sus credenciales.
+
+## 6. Acceso y operaciones pendientes
+
+El registro público crea estudiantes pendientes de verificación. El JWT permite consultar la sesión, pero publicar y realizar operaciones exige `status = 'Activa'` y `verification_status = 'Verificado'`. El servidor consulta esos valores y el rol vigente en cada petición; una suspensión o cambio de rol se aplica también a tokens emitidos previamente.
+
+El flujo administrativo/institucional de verificación aún está pendiente. La entrega por API requiere `Lista para entrega`, consume el OTP y actualiza operación, reserva y auditoría en una transacción. Aún faltan aceptación, validación económica, caducidad y hash del OTP y confirmaciones separadas de ambas partes. No existe una ruta pública que salte esos pasos para habilitar una entrega.
+
+La creación de operaciones requiere una publicación activa. Alquiler y préstamo requieren inicio y fin válidos, con fin posterior al inicio; venta no admite fechas de reserva. Las fechas aceptan ISO 8601 con zona horaria o `YYYY-MM-DD` (medianoche de Perú, UTC−05:00); se normalizan a UTC antes de persistir.

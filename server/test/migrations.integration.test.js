@@ -121,6 +121,30 @@ describe.skipIf(!enabled)('Migraciones con PostgreSQL temporal real', () => {
     await noLeakedSession();
   });
 
+  it.each(['SELECT 1;\n', '-- foreign baseline\n'])('rechaza bytes ajenos de 001 en un directorio personalizado: %s', async (foreign) => {
+    await db.query(await readFile(new URL('../src/db/migrations/001_init.sql', import.meta.url), 'utf8'));
+    await writeFile(join(directory, '001_init.sql'), foreign);
+    await writeFile(join(directory, '002_pending.sql'), 'CREATE TABLE must_not_exist (id int);');
+    await expect(runMigrations(db, { directory, adoptBaseline: true }))
+      .rejects.toMatchObject({ code: 'BASELINE_ADOPTION_VALIDATION_FAILED' });
+    expect((await db.query('SELECT name FROM schema_migrations')).rows).toEqual([]);
+    expect((await db.query("SELECT to_regclass('must_not_exist') AS name")).rows[0].name).toBeNull();
+    await noLeakedSession();
+  });
+
+  it('adopta una copia canónica de 001 desde un directorio personalizado', async () => {
+    const baseline = await readFile(new URL('../src/db/migrations/001_init.sql', import.meta.url));
+    await db.query(baseline.toString('utf8'));
+    await writeFile(join(directory, '001_init.sql'), baseline);
+    expect(await runMigrations(db, { directory, adoptBaseline: true }))
+      .toEqual({ applied: [], skipped: ['001_init.sql'] });
+    expect((await db.query('SELECT name, checksum FROM schema_migrations')).rows)
+      .toEqual([{ name: '001_init.sql', checksum: createHash('sha256').update(baseline).digest('hex') }]);
+    expect(await runMigrations(db))
+      .toEqual({ applied: ['002_foundations.sql'], skipped: ['001_init.sql'] });
+    await noLeakedSession();
+  });
+
   it('el CLI --adopt-baseline usa la base histórica explícita y sale correctamente', async () => {
     await db.query(await readFile(new URL('../src/db/migrations/001_init.sql', import.meta.url), 'utf8'));
     const { stdout } = await promisify(execFile)(process.execPath,

@@ -1,4 +1,7 @@
 // Frozen schema contract for the historical 001_init.sql (not inferred from the live database).
+// SHA-256 of the immutable historical SQL bytes with the repository's LF policy.
+export const historicalBaselineChecksum = 'd12ead2eb91192a8ddc2b1318ed78aa804aa0177a13e74fc9066aee0908216a4';
+
 // Column tuples: [name, PostgreSQL type, NOT NULL, PostgreSQL default expression].
 export const baselineContract = {
   enums: {

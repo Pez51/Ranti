@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import pool from '../config/database.js';
 import { baselineValidationError, validateBaseline } from './validate-baseline.js';
+import { historicalBaselineChecksum } from './baseline-contract.js';
 
 const migrationsDirectory = fileURLToPath(new URL('./migrations/', import.meta.url));
 // Shared by every runner; session ownership survives each migration's COMMIT.
@@ -36,8 +37,11 @@ export async function runMigrations(db = pool, { directory = migrationsDirectory
         throw error;
       }
     }
-    if (adoptBaseline && !history.has('001_init.sql') && !migrations.some((m) => m.name === '001_init.sql')) {
-      throw baselineValidationError('001_init.sql is missing from the migration directory');
+    if (adoptBaseline && !history.has('001_init.sql')) {
+      const baseline = migrations.find((m) => m.name === '001_init.sql');
+      if (!baseline || baseline.checksum !== historicalBaselineChecksum) {
+        throw baselineValidationError('001_init.sql must match the canonical historical bytes');
+      }
     }
     const result = { applied: [], skipped: [] };
     for (const migration of migrations) {

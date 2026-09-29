@@ -10,6 +10,7 @@ import authRoutes from './routes/auth.routes.js';
 import publicationRoutes from './routes/publication.routes.js'; 
 import operationRoutes from './routes/operation.routes.js'; 
 import notificationRoutes from './routes/notification.routes.js'; // <- IMPORTACIÓN NUEVA
+import userRoutes, { adminRoutes } from './routes/user.routes.js';
 
 const app = express();
 
@@ -37,6 +38,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/publications', publicationRoutes);
 app.use('/api/operations', operationRoutes); 
 app.use('/api/notifications', notificationRoutes); // <- REGISTRO NUEVO
+app.use('/api/users', userRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Ruta de comprobación de salud del servidor (Health Check)
 app.get('/health', (req, res) => {

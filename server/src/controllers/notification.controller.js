@@ -44,13 +44,13 @@ export const markAsRead = async (req, res) => {
   }
 };
 
-// 3. Función Utilitaria (No es un endpoint). Úsala dentro de operation.controller.js
-export const createNotification = async (client, userId, type, title, message, referenceId = null) => {
+// Handler boundary: bind the database with payload => createInAppNotification(db, payload).
+export const createInAppNotification = async (db, { userId, type, title, message, referenceId = null }) => {
   const insertQuery = `
     INSERT INTO notifications (user_id, type, title, message, reference_id)
     VALUES ($1, $2, $3, $4, $5)
+    RETURNING *
   `;
-  // Permite usar una transacción existente (client) o el pool por defecto
-  const dbConfig = client || pool; 
-  await dbConfig.query(insertQuery, [userId, type, title, message, referenceId]);
+  const { rows } = await db.query(insertQuery, [userId, type, title, message, referenceId]);
+  return rows[0];
 };

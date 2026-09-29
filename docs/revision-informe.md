@@ -15,13 +15,41 @@ Revisión del commit `3d87e3c` frente al [Informe del Capítulo 1](C:/Users/giac
 | 7–8. Estado y fechas de reserva | Se rechazan publicaciones no activas, identificadores/fechas inválidos, intervalos vacíos o invertidos y fechas de reserva en ventas. No quedan transacciones abiertas tras esos rechazos. Siguen pendientes aceptación/rechazo, cancelación y restricciones de integridad en la base de datos. |
 | 10. Datos del detalle público | Corregido: solo publicaciones activas y selección explícita sin correo ni identificador interno del oferente. |
 | 11. Interfaces desconectadas | Parcialmente corregido: login, sesión, notificaciones, creación, catálogo y detalle de publicaciones consumen la API real. Reclamos, ARCO, perfil y paneles todavía contienen flujos o datos locales. |
-| 15. Calidad | El cliente pasa lint y build; hay 10 pruebas unitarias y 31 de integración contra PostgreSQL real. No equivale a aceptación de todos los RF/RNF. |
+| 15. Calidad | Fase 1: 65 pruebas servidor aprobadas sin PostgreSQL y 68 omitidas; 133/133 con PostgreSQL temporal; cliente 7/7, lint y build correctos. No equivale a aceptación de todos los RF/RNF. |
 | 16. Arranque sin base de datos | Corregido: el error de conexión se propaga e impide iniciar el listener. |
 | 17. README | Corregidas migración, comandos, formato y credencial de ejemplo. Se documenta la ejecución reproducible de pruebas. |
 
 Las pruebas reales se ejecutan con `tools/test-postgres.ps1`, que crea y elimina una instancia temporal independiente. Incluyen dos reservas concurrentes, dos confirmaciones de entrega concurrentes, ausencia de transacciones abiertas y rollback completo cuando falla la auditoría; no sustituyen la prueba de 100 reservas del RNF-02. Se verificaron ambas pantallas de indisponibilidad en el navegador.
 
 No hay todavía una ruta de negocio que habilite `Lista para entrega` después de una aceptación y validación económica. Tampoco están completos el registro/verificación desde el cliente, las confirmaciones bilaterales, el cierre, la verificación académica o la gestión económica. Las solicitudes desde el detalle permanecen deshabilitadas hasta definir esa máquina de estados. No usar este prototipo para operaciones reales. Los BPMN y el grafo corresponden al commit inicial y deben regenerarse cuando se estabilice el flujo completo.
+
+### Fase 1 — fundamentos verificados el 2026-09-28
+
+| Frontera implementada | Evidencia y límite |
+|---|---|
+| Rutas protegidas | Guardas de sesión y rol administrador, sesión corrupta y cambios de sesión cubiertos por 7 pruebas cliente. No implementa identidad ni perfiles. |
+| Configuración y errores | Configuración validada y congelada, JWT de al menos 32 caracteres fuera de pruebas, autorización por rol y UUID generado por petición. El formato normalizado cubre el middleware final, 404 y JSON malformado; las respuestas explícitas heredadas se conservan. |
+| Migraciones | Runner incremental con SHA-256, bloqueo advisory, transacciones por archivo, rechazo de checksum alterado y adopción explícita de una línea base compatible. `001_init.sql` conserva su contenido histórico; LF se fija con Git. |
+| Auditoría | `appendAudit` acepta cliente transaccional, snapshots de objeto o NULL y metadatos; el trigger rechaza UPDATE/DELETE normales. Rechaza claves sensibles anidadas antes de persistir. No implica cobertura de auditoría en todos los RF. |
+| Outbox | Deduplicación de inserciones concurrentes, reclamación atómica con `FOR UPDATE SKIP LOCKED`, lease recuperable y comprobación del propietario al completar/fallar. Handler exitoso confirma una vez la fila; fallo y evento desconocido reintentan con backoff de 60 segundos iniciales hasta una hora y diagnóstico fijo sanitizado. |
+| Notificaciones | `createInAppNotification(db, payload)` devuelve la fila insertada y puede enlazarse como handler. Lectura y marcado propios permanecen. No hay productores/scheduler activos ni cobertura completa de RF-20. |
+
+Los handlers se ejecutan después de la reclamación; `processOutboxBatch` requiere un Pool o Client en autocommit. Los repositorios aceptan clientes de transacciones del llamador para que negocio, auditoría y encolado se confirmen juntos. Todos los reclamadores deben usar la misma duración de lease (60 segundos por defecto) e identificadores de worker únicos entre ejecuciones concurrentes. No hay heartbeat de leases: un efecto lento o una caída entre el efecto y la confirmación puede repetirse. La garantía de efectos es al menos una vez y exige handlers idempotentes; la deduplicación del encolado no deduplica por sí sola notificaciones u otros efectos. El rechazo de secretos se basa en claves (`password`, `token`, `otp`, `pan`, `cvv`), no en clasificación de texto libre.
+
+Comandos ejecutados desde la raíz:
+
+| Comando | Resultado exacto |
+|---|---|
+| `npm test --prefix server` | 65 aprobadas + 68 omitidas; 7 archivos aprobados + 4 omitidos. |
+| `powershell -ExecutionPolicy Bypass -File tools/test-postgres.ps1` | 133 aprobadas en 11 archivos, 0 omitidas; instancia detenida y directorio temporal eliminado. |
+| `npm test --prefix client` | 7 aprobadas en 1 archivo. |
+| `npm run lint --prefix client` | Salida 0. |
+| `npm run build --prefix client` | Salida 0, frontend y service worker generados. |
+| `git diff --check` | Sin errores. |
+
+Arranque: configurar `server/.env`, ejecutar `npm run migrate --prefix server` y `npm run dev` desde la raíz; `npm start --prefix server` inicia solo la API. Para una base creada manualmente con la línea base compatible, ejecutar explícitamente `npm run migrate --prefix server -- --adopt-baseline` después de respaldarla. El arranque no migra automáticamente. Las condiciones de adopción y los checksums están documentados en el [README](../README.md).
+
+Permanecen pendientes las fases posteriores y sus RF: identidad, roles académicos, perfiles, riesgo y edición de publicaciones, solicitudes/aceptación/cancelación, economía simulada, OTP seguro y cierre, reputación, incidencias, moderación, ARCO y notificaciones completas. Tampoco se declara cumplimiento de rendimiento, 100 reservas concurrentes, disponibilidad, SUS, instalación PWA o recuperación. No se procesa dinero real.
 
 ## Diagnóstico inicial (commit `3d87e3c`)
 

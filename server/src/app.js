@@ -2,21 +2,19 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
+import { env } from './config/env.js';
 
 import authRoutes from './routes/auth.routes.js';
 import publicationRoutes from './routes/publication.routes.js'; 
 import operationRoutes from './routes/operation.routes.js'; 
 import notificationRoutes from './routes/notification.routes.js'; // <- IMPORTACIÓN NUEVA
 
-dotenv.config();
-
 const app = express();
 
 // Middlewares de Seguridad Globales
 app.use(helmet()); // Protege cabeceras HTTP
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: env.FRONTEND_URL,
   credentials: true
 }));
 

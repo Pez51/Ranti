@@ -1,8 +1,6 @@
 import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
 import pool from '../config/database.js';
-
-dotenv.config();
+import { env } from '../config/env.js';
 
 export const requireAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -12,7 +10,7 @@ export const requireAuth = async (req, res, next) => {
 
   let decoded;
   try {
-    decoded = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    decoded = jwt.verify(authHeader.slice(7), env.JWT_SECRET, { algorithms: ['HS256'] });
     if (typeof decoded !== 'object' || typeof decoded.id !== 'string' ||
         !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(decoded.id)) {
       return res.status(401).json({ error: 'Sesión inválida. Inicia sesión nuevamente.' });
@@ -41,6 +39,16 @@ export const requireAuth = async (req, res, next) => {
 export const requireVerifiedAccount = (req, res, next) => {
   if (req.user?.status !== 'Activa' || req.user?.verification_status !== 'Verificado') {
     return res.status(403).json({ error: 'Necesitas una cuenta activa y verificada para realizar esta acción.' });
+  }
+  next();
+};
+
+export const requireRole = (...allowedRoles) => (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Necesitas iniciar sesión para realizar esta acción.' });
+  }
+  if (!allowedRoles.includes(req.user.role)) {
+    return res.status(403).json({ error: 'No tienes permiso para realizar esta acción.' });
   }
   next();
 };

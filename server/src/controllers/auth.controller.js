@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
+import { env } from '../config/env.js';
 import { z } from 'zod';
 
 const institutionalEmail = z.string().trim().toLowerCase().email().max(255).refine(
@@ -46,7 +47,7 @@ export const register = async (req, res) => {
     // 5. Generar JWT
     const token = jwt.sign(
       { id: newUser.rows[0].id, role: newUser.rows[0].role },
-      process.env.JWT_SECRET,
+      env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 
@@ -93,7 +94,7 @@ export const login = async (req, res) => {
     // 4. Generar JWT
     const token = jwt.sign(
       { id: user.id, role: user.role },
-      process.env.JWT_SECRET,
+      env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 

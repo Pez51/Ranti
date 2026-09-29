@@ -1,11 +1,10 @@
 import pkg from 'pg';
-import dotenv from 'dotenv';
+import { env } from './env.js';
 
-dotenv.config();
 const { Pool } = pkg;
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: env.DATABASE_URL,
   // Configuraciones recomendadas para producción/desarrollo
   max: 20, // Máximo de clientes en el pool
   idleTimeoutMillis: 30000,

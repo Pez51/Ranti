@@ -1,26 +1,32 @@
 import { z } from 'zod';
 import { assertNoSensitiveKeys } from '../../shared/security/sensitive-data.js';
 
+const jsonObject = z.custom(value => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}, { message: 'Expected a JSON object' }).pipe(z.json());
+
 const auditEvent = z.object({
   actorId: z.uuid().nullable().optional(),
   action: z.string().trim().min(1).max(100),
   entityType: z.string().trim().min(1).max(100),
   entityId: z.uuid(),
-  oldValues: z.json().optional(),
-  newValues: z.json().optional(),
+  oldValues: jsonObject.nullable().optional(),
+  newValues: jsonObject.nullable().optional(),
   requestId: z.uuid().nullable().optional(),
-  metadata: z.json().refine(value => value !== null && typeof value === 'object' && !Array.isArray(value)).optional(),
+  metadata: jsonObject.optional(),
 });
 
 export async function appendAudit(db, event) {
+  assertNoSensitiveKeys(event?.oldValues, 'oldValues');
+  assertNoSensitiveKeys(event?.newValues, 'newValues');
+  assertNoSensitiveKeys(event?.metadata, 'metadata');
+
   const parsed = auditEvent.parse(event);
   const oldValues = parsed.oldValues ?? null;
   const newValues = parsed.newValues ?? null;
   const metadata = parsed.metadata ?? {};
-
-  assertNoSensitiveKeys(oldValues, 'oldValues');
-  assertNoSensitiveKeys(newValues, 'newValues');
-  assertNoSensitiveKeys(metadata, 'metadata');
 
   const { rows } = await db.query(
     `INSERT INTO audit_logs

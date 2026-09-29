@@ -37,6 +37,42 @@ describe.skipIf(!enabled)('Audit repository with disposable PostgreSQL', () => {
     expect(row.timestamp).toBeInstanceOf(Date);
   });
 
+  it('round-trips object snapshots and stores explicit null snapshots as SQL NULL', async () => {
+    const objectRow = await appendAudit(db, {
+      action: 'publication.updated', entityType: 'publication', entityId: randomUUID(),
+      oldValues: { status: 'Borrador', tags: ['old'] },
+      newValues: { status: 'Activa', tags: ['new'] },
+      metadata: { channel: 'web' },
+    });
+    const nullRow = await appendAudit(db, {
+      action: 'publication.updated', entityType: 'publication', entityId: randomUUID(),
+      oldValues: null, newValues: null,
+    });
+    const { rows } = await db.query(
+      'SELECT id, old_values, new_values, metadata FROM audit_logs WHERE id = ANY($1::uuid[]) ORDER BY id',
+      [[objectRow.id, nullRow.id]],
+    );
+    expect(rows.find(row => row.id === objectRow.id)).toMatchObject({
+      old_values: { status: 'Borrador', tags: ['old'] },
+      new_values: { status: 'Activa', tags: ['new'] },
+      metadata: { channel: 'web' },
+    });
+    expect(rows.find(row => row.id === nullRow.id)).toMatchObject({
+      old_values: null, new_values: null, metadata: {},
+    });
+  });
+
+  it.each([
+    ['oldValues', []], ['oldValues', 'previous'],
+    ['newValues', [{ status: 'Activa' }]], ['newValues', 'current'],
+  ])('rejects %s snapshot %s without inserting an audit row', async (field, snapshot) => {
+    const entityId = randomUUID();
+    await expect(appendAudit(db, {
+      action: 'publication.updated', entityType: 'publication', entityId, [field]: snapshot,
+    })).rejects.toThrow();
+    expect((await db.query('SELECT id FROM audit_logs WHERE entity_id = $1', [entityId])).rows).toEqual([]);
+  });
+
   it('refuses update and delete of a stored audit row', async () => {
     const row = await appendAudit(db, {
       action: 'publication.reviewed', entityType: 'publication', entityId: randomUUID(),

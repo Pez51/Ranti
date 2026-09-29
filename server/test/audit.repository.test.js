@@ -41,6 +41,26 @@ describe('appendAudit', () => {
     ]);
   });
 
+  it('treats explicit null snapshots as SQL NULL', async () => {
+    const db = { query: vi.fn().mockResolvedValue({ rows: [{ id: entityId }] }) };
+    await appendAudit(db, {
+      action: 'system.started', entityType: 'system', entityId,
+      oldValues: null, newValues: null,
+    });
+    expect(db.query.mock.calls[0][1].slice(4, 6)).toEqual([null, null]);
+  });
+
+  it.each([
+    ['oldValues', []], ['oldValues', 'previous'],
+    ['newValues', [{ status: 'Activa' }]], ['newValues', 'current'],
+  ])('rejects %s snapshot %s before querying', async (field, snapshot) => {
+    const db = { query: vi.fn() };
+    await expect(appendAudit(db, {
+      action: 'test', entityType: 'test', entityId, [field]: snapshot,
+    })).rejects.toThrow();
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid required fields before querying', async () => {
     const db = { query: vi.fn() };
     await expect(appendAudit(db, { action: '', entityType: 'publication', entityId })).rejects.toThrow();
@@ -72,6 +92,24 @@ describe('appendAudit', () => {
     } catch (error) {
       expect(String(error)).not.toContain('secret-value');
     }
+  });
+
+  it.each([
+    ['oldValues', { PaSsWoRd: undefined }],
+    ['newValues', { nested: [{ ToKeN: () => 'private-marker-582' }] }],
+    ['metadata', { CvV: () => 'private-marker-582' }],
+  ])('rejects raw forbidden keys in %s before JSON validation', async (field, value) => {
+    const db = { query: vi.fn() };
+    const event = { action: 'test', entityType: 'test', entityId, [field]: value };
+    let thrown;
+    try {
+      await appendAudit(db, event);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({ code: 'AUDIT_SENSITIVE_DATA' });
+    expect(String(thrown)).not.toContain('private-marker-582');
+    expect(db.query).not.toHaveBeenCalled();
   });
 });
 

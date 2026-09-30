@@ -1,95 +1,97 @@
-import { User, Clock, AlertCircle, ShieldCheck, MapPin, CalendarDays } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { apiRequest } from '../../lib/api';
+import { getSession } from '../../lib/auth';
+
+const statusLabel = { pending: 'Pendiente', approved: 'Aprobada', rejected: 'Rechazada' };
+const metadataFields = [['documentType', 'Tipo de documento', 100], ['institution', 'Institución', 200], ['academicPeriod', 'Periodo académico', 100], ['note', 'Nota', 500]];
 
 export default function UserProfile() {
-  return (
-    <div className="py-6 max-w-5xl mx-auto space-y-8">
-      
-      {/* Cabecera del Perfil */}
-      <div className="bg-green-gradient p-8 md:p-12 rounded-3xl border-4 border-ranti-ink shadow-solid flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
-        {/* Decoración geométrica */}
-        <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white opacity-20 rounded-full border-4 border-ranti-ink"></div>
-        
-        <div className="w-32 h-32 bg-pink-200 rounded-full border-4 border-ranti-ink shadow-solid-sm overflow-hidden flex-shrink-0 relative z-10">
-          <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Avatar" className="w-full h-full object-cover" />
-        </div>
-        
-        <div className="text-center md:text-left relative z-10 text-white">
-          <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
-            <span className="bg-yellow-300 text-ranti-ink text-xs font-bold px-3 py-1 rounded-full border-2 border-ranti-ink uppercase tracking-widest">Estudiante</span>
-            <span className="flex items-center gap-1 text-sm font-bold bg-ranti-dark px-3 py-1 rounded-full border-2 border-ranti-ink">
-              <ShieldCheck size={14}/> Verificado
-            </span>
-          </div>
-          <h2 className="text-4xl md:text-5xl font-display font-bold mb-2" style={{ textShadow: '2px 2px 0 #062912' }}>Felix UCSM</h2>
-          <p className="font-body font-bold text-lg flex items-center justify-center md:justify-start gap-2">
-            <MapPin size={18}/> Facultad de Ingeniería Civil
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        
-        {/* Columna Izquierda: Métricas */}
-        <div className="space-y-6">
-          <div className="bg-white p-6 rounded-3xl border-4 border-ranti-ink shadow-solid">
-            <h3 className="font-display font-bold text-xl text-ranti-ink mb-4 flex items-center gap-2">
-              <User size={20}/> Mi Reputación
-            </h3>
-            <div className="flex items-end gap-2 mb-2">
-              <span className="text-5xl font-display font-bold text-ranti-ink">4.9</span>
-              <span className="text-gray-500 font-bold mb-1">/ 5.0 ⭐</span>
-            </div>
-            <p className="text-sm font-bold text-gray-500">Basado en 8 operaciones (entregas a tiempo y cuidado del equipo).</p>
-          </div>
-
-          <Link to="/oferente" className="block bg-ranti-light p-6 rounded-3xl border-4 border-ranti-ink shadow-solid hover:-translate-y-1 hover:shadow-solid-hover transition-all group">
-            <h3 className="font-display font-bold text-xl text-ranti-ink mb-2">Modo Oferente</h3>
-            <p className="text-sm font-bold text-gray-600 mb-4">Cambia a tu panel de ventas y alquileres publicados.</p>
-            <span className="inline-block bg-ranti-ink text-white px-4 py-2 rounded-xl border-2 border-ranti-ink font-bold text-sm group-hover:bg-gray-800 transition-colors">
-              Ir a Mi Panel de Oferente →
-            </span>
-          </Link>
-        </div>
-
-        {/* Columna Derecha: Equipos en mi poder (Demandante) */}
-        <div className="md:col-span-2 space-y-6">
-          <h3 className="text-2xl font-display font-bold text-ranti-ink flex items-center gap-2">
-            <Clock size={24} strokeWidth={2.5}/> Equipos en mi poder (Alquileres Activos)
-          </h3>
-          
-          <div className="bg-white rounded-3xl border-4 border-ranti-ink shadow-solid overflow-hidden">
-            {/* Item 1: Activo y a tiempo */}
-            <div className="p-6 border-b-4 border-ranti-ink hover:bg-gray-50 transition-colors flex flex-col sm:flex-row gap-6 items-start sm:items-center">
-              <div className="w-24 h-24 bg-blue-100 rounded-2xl border-4 border-ranti-ink flex-shrink-0"></div>
-              <div className="flex-grow">
-                <div className="flex justify-between items-start mb-2">
-                  <h4 className="font-display font-bold text-xl text-ranti-ink leading-tight">Estación Total Leica TS06</h4>
-                  <span className="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full border-2 border-blue-800 flex items-center gap-1">
-                    <CalendarDays size={12}/> En Uso
-                  </span>
-                </div>
-                <p className="text-sm font-bold text-gray-500 mb-3">Dueño: Carlos Mendoza</p>
-                <div className="flex items-center gap-2 text-sm font-bold bg-yellow-100 text-yellow-800 px-3 py-2 rounded-xl border-2 border-yellow-300 w-fit">
-                  <AlertCircle size={16}/> Devolver mañana antes de las 18:00
-                </div>
-              </div>
-              <Link to="/entrega/1" className="w-full sm:w-auto text-center bg-white text-ranti-ink px-4 py-3 rounded-xl border-4 border-ranti-ink font-bold hover:bg-gray-100 transition-colors">
-                Generar OTP de Devolución
-              </Link>
-            </div>
-
-            {/* Historial vacío o sin más elementos */}
-            <div className="p-6 text-center bg-gray-50">
-              <p className="font-bold text-gray-400">No tienes más equipos alquilados o prestados actualmente.</p>
-              <Link to="/" className="text-ranti-secondary hover:text-ranti-primary font-bold underline underline-offset-4 mt-2 inline-block">
-                Explorar el catálogo
-              </Link>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  );
+  const token = getSession()?.token;
+  const [profile, setProfile] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [revision, setRevision] = useState(0);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!token) return;
+    let current = true;
+    Promise.all([apiRequest('/users/me', { token }), apiRequest('/users/me/role-requests', { token })])
+      .then(([data, requests]) => { if (current) { setProfile(data); setHistory(requests); } })
+      .catch(failure => { if (current) setError(failure.message); })
+      .finally(() => { if (current) setLoading(false); });
+    return () => { current = false; };
+  }, [token, revision]);
+  function retry() { setError(''); setNotice(''); setProfile(null); setLoading(true); setRevision(value => value + 1); }
+  async function save(event) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const updated = await apiRequest('/users/me', { token, method: 'PATCH', body: JSON.stringify({ display_name: data.get('display_name').trim(), avatar_url: data.get('avatar_url').trim() || null, faculty: data.get('faculty').trim() || null }) });
+      setProfile(updated); setNotice('Perfil guardado.');
+    } catch (failure) { setError(failure.message); }
+    finally { setBusy(false); }
+  }
+  async function requestRole(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const evidence = data.get('evidence_ref').trim();
+    if (!/^https:\/\//.test(evidence)) return setError('La evidencia requiere una referencia HTTPS.');
+    const metadata = Object.fromEntries(metadataFields.map(([key]) => [key, data.get(key).trim()]).filter(([, value]) => value));
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await apiRequest('/users/me/role-requests', { token, method: 'POST', body: JSON.stringify({ evidence_ref: evidence, evidence_metadata: metadata }) });
+      setHistory(previous => [result, ...previous]); setNotice('Solicitud enviada para revisión.'); form.reset();
+    } catch (failure) { setError(failure.message); }
+    finally { setBusy(false); }
+  }
+  if (!token) return <p role="alert">Inicia sesión para ver tu perfil.</p>;
+  return <div className="workflow max-w-3xl mx-auto">
+    <h1>Mi perfil</h1>
+    {loading && <p role="status">Cargando perfil…</p>}
+    {error && <p role="alert">{error}</p>}
+    {notice && <p role="status">{notice}</p>}
+    <button disabled={loading || busy} onClick={retry}>Reintentar</button>
+    {profile && <>
+      <dl>
+        <dt>Correo</dt><dd>{profile.email}</dd>
+        <dt>Condición académica</dt><dd>{profile.academic_condition}</dd>
+        <dt>Universidad</dt><dd>{profile.university}</dd>
+        <dt>Estado de cuenta</dt><dd>Activa / Verificado (acceso confirmado por el servidor)</dd>
+        <dt>Reputación</dt><dd>{profile.reputation_score ?? 'Sin datos'}</dd>
+        <dt>Operaciones</dt><dd>{profile.operations_count ?? 'Sin datos'}</dd>
+        <dt>Cuenta creada</dt><dd>{profile.created_at ? new Date(profile.created_at).toLocaleString() : 'Sin datos'}</dd>
+      </dl>
+      <form onSubmit={save} key={`${profile.display_name}-${profile.avatar_url}-${profile.faculty}`}>
+        <fieldset disabled={busy}>
+          <label>Nombre visible<input name="display_name" defaultValue={profile.display_name || ''} maxLength={100} required /></label>
+          <label>Avatar (URL HTTPS)<input name="avatar_url" type="url" pattern="https://.*" defaultValue={profile.avatar_url || ''} maxLength={2048} /></label>
+          <label>Facultad<input name="faculty" defaultValue={profile.faculty || ''} maxLength={100} /></label>
+          <p>Deja avatar o facultad vacíos para eliminarlos. Las métricas y la condición académica no se editan aquí.</p>
+          <button>{busy ? 'Guardando…' : 'Guardar perfil'}</button>
+        </fieldset>
+      </form>
+      <h2>Solicitudes de rol Estudiante</h2>
+      {!history.length && <p>No tienes solicitudes registradas.</p>}
+      {history.map(request => <article key={request.id}>
+        <h3>{statusLabel[request.status] || request.status}</h3>
+        <p>{request.created_at ? new Date(request.created_at).toLocaleString() : ''}</p>
+        {request.review_reason && <p>{request.review_reason}</p>}
+      </article>)}
+      {profile.role === 'Egresado' && !history.some(request => request.status === 'pending') && <form onSubmit={requestRole}>
+        <p>Presenta una referencia auténtica de tu condición actual. Solo un administrador puede decidir la solicitud.</p>
+        <fieldset disabled={busy}>
+          <label>Referencia de evidencia (HTTPS)<input name="evidence_ref" type="url" pattern="https://.*" maxLength={2048} required /></label>
+          {metadataFields.map(([key, label, maxLength]) => <label key={key}>{label}<input name={key} maxLength={maxLength} /></label>)}
+          <button>Solicitar rol Estudiante</button>
+        </fieldset>
+      </form>}
+      {profile.role === 'Estudiante' && <p>Ya tienes el rol Estudiante; no necesitas solicitarlo de nuevo.</p>}
+    </>}
+    <Link to="/mis-publicaciones">Gestionar mis publicaciones</Link>
+  </div>;
 }

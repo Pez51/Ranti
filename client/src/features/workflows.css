@@ -1,0 +1,18 @@
+.workflow { padding: 1.5rem; margin-block: 1rem; background: white; border: 3px solid #062912; border-radius: 1.5rem; color: #062912; }
+.workflow h1 { font-size: 2rem; font-weight: 800; margin-bottom: 1rem; }
+.workflow h2 { font-size: 1.4rem; font-weight: 700; margin-block: 1rem .6rem; }
+.workflow h3 { font-size: 1.15rem; font-weight: 700; }
+.workflow p, .workflow details { margin-block: .75rem; }
+.workflow label { display: block; font-weight: 600; margin-block: .8rem; }
+.workflow input:not([type=checkbox]), .workflow textarea, .workflow select { display: block; width: 100%; padding: .7rem; border: 2px solid #8a9b90; border-radius: .5rem; background: #f8faf9; color: #062912; }
+.workflow button { padding: .6rem 1rem; margin: .4rem .6rem .4rem 0; border: 2px solid #062912; border-radius: .6rem; font-weight: 700; background: #def5e6; }
+.workflow button:disabled { opacity: .55; cursor: not-allowed; }
+.workflow :focus-visible { outline: 3px solid #126ea7; outline-offset: 3px; }
+.workflow a { color: #065f46; text-decoration: underline; margin-right: 1rem; overflow-wrap: anywhere; }
+.workflow [role=alert] { color: #991b1b; background: #fff1f2; padding: .8rem; border: 1px solid #be123c; }
+.workflow [role=status] { padding: .6rem; background: #eef9f2; }
+.workflow section, .workflow article { margin-block: 1rem; padding: 1rem; border: 1px solid #a8b7ae; border-radius: .7rem; }
+.workflow dl { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(0, 2fr); gap: .6rem 1rem; }
+.workflow dt { font-weight: 700; }
+.workflow dd { overflow-wrap: anywhere; }
+.workflow [role=dialog] { background: #fff9db; border: 2px solid #655000; padding: 1rem; margin-block: 1rem; border-radius: .7rem; }

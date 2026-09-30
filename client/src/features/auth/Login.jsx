@@ -1,6 +1,6 @@
 import { Mail, Lock, LogIn, UserPlus, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../lib/api';
 import { saveSession } from '../../lib/auth';
 
@@ -11,6 +11,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -19,10 +20,14 @@ export default function Login() {
     try {
       const session = await apiRequest('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       });
+      if (!session.token || !session.user) throw new Error('No se pudo iniciar la sesión.');
       saveSession({ token: session.token, user: session.user }, remember);
-      navigate('/oferente');
+      const from = location.state?.from;
+      const path = typeof from?.pathname === 'string' ? from.pathname : '';
+      const safe = /^\/(?!\/)/.test(path) && !/[\\\s]/.test(path) && !['/login', '/registro'].includes(path);
+      navigate(safe ? { pathname: path, search: from.search || '', hash: from.hash || '' } : '/perfil', { replace: true });
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -41,11 +46,13 @@ export default function Login() {
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            <label className="block font-bold text-sm text-ranti-ink mb-2">Correo Institucional</label>
+            <label htmlFor="login-email" className="block font-bold text-sm text-ranti-ink mb-2">Correo Institucional</label>
             <div className="bg-gray-50 border-4 border-ranti-ink rounded-xl px-4 py-3 flex items-center focus-within:shadow-solid-sm focus-within:-translate-y-1 transition-all">
               <Mail size={20} className="text-gray-400 mr-2" />
               <input 
                 type="email" 
+                id="login-email"
+                autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="usuario@estudiante.ucsm.edu.pe"
@@ -56,11 +63,13 @@ export default function Login() {
           </div>
 
           <div>
-            <label className="block font-bold text-sm text-ranti-ink mb-2">Contraseña</label>
+            <label htmlFor="login-password" className="block font-bold text-sm text-ranti-ink mb-2">Contraseña</label>
             <div className="bg-gray-50 border-4 border-ranti-ink rounded-xl px-4 py-3 flex items-center focus-within:shadow-solid-sm focus-within:-translate-y-1 transition-all">
               <Lock size={20} className="text-gray-400 mr-2" />
               <input 
                 type="password" 
+                id="login-password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••" 
@@ -90,10 +99,10 @@ export default function Login() {
         </form>
 
         <div className="mt-8 pt-6 border-t-4 border-gray-100 text-center">
-          <p className="font-bold text-gray-500 mb-4">¿No tienes cuenta o eres egresado sin correo?</p>
-          <button type="button" disabled title="Flujo de verificación pendiente" className="w-full bg-gray-100 text-gray-500 px-6 py-3 rounded-xl border-4 border-gray-300 font-bold cursor-not-allowed flex justify-center items-center gap-2">
-            <UserPlus size={20} /> Verificación próximamente
-          </button>
+          <p className="font-bold text-gray-500 mb-4">¿Aún no tienes cuenta?</p>
+          <Link to="/registro" className="underline flex justify-center items-center gap-2">
+            <UserPlus size={20} /> Registrarse o retomar verificación
+          </Link>
         </div>
 
         <div className="mt-6 flex items-start gap-2 bg-yellow-100 p-3 rounded-lg border-2 border-yellow-300 text-xs font-bold text-yellow-800">

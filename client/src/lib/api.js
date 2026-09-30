@@ -12,7 +12,12 @@ export async function apiRequest(path, { token, headers, ...options } = {}) {
 
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body.error || 'No se pudo completar la solicitud.');
+    const message = typeof body.error === 'string' ? body.error : body.error?.message;
+    const error = new Error(message || 'No se pudo completar la solicitud.');
+    error.status = response.status;
+    error.code = body.code || body.error?.code;
+    error.retryable = body.retryable === true;
+    throw error;
   }
   return body;
 }

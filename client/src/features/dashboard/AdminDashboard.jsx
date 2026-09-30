@@ -1,159 +1,81 @@
-import { ShieldAlert, Users, FileWarning, Eye, Activity, AlertOctagon, UserCheck } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { apiRequest } from '../../lib/api';
+import { getSession } from '../../lib/auth';
+
+const labels = { pending: 'Pendiente', approved: 'Aprobada', rejected: 'Rechazada' };
+function Review({ item, kind, token, onDecided, onBusy }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [stale, setStale] = useState(false);
+  const role = kind === 'role';
+  async function decide(decision) {
+    if (!reason.trim()) return;
+    setBusy(true); onBusy(true); setError('');
+    try {
+      const result = await apiRequest(role ? `/admin/role-requests/${item.id}/decision` : `/admin/publications/${item.id}/review`, {
+        token, method: 'POST', body: JSON.stringify({ decision, reason: reason.trim(), ...(!role ? { submittedAt: item.submitted_at } : {}) }),
+      });
+      onDecided(item.id, `Decisión confirmada: ${labels[result.status] || result.status}. ${result.review_reason || ''}`);
+    } catch (failure) {
+      setError(`${failure.message}${failure.status === 409 ? ' Actualiza las colas: otra decisión, un envío posterior u operaciones activas pueden impedir esta acción.' : ''}`);
+      if (failure.status === 409 || failure.status === 403) setStale(true);
+    } finally { setBusy(false); onBusy(false); }
+  }
+  return <section aria-label={role ? `Solicitud: ${item.user.email}` : `Publicación: ${item.title}`}>
+    <h3>{role ? item.user.email : item.title}</h3>
+    <p>{role ? 'Solicitud de rol Estudiante' : `Riesgo: ${item.risk_level ?? 'Sin calcular'} · Política: ${item.risk_policy_version || 'Sin versión'}`}</p>
+    {!role && <><p>{item.description}</p><p>{item.modality} · Precio S/{item.price ?? 0} · Garantía S/{item.guarantee_amount ?? 0}</p></>}
+    {(role ? item.evidence_ref : item.provenance_evidence_ref) && <a href={role ? item.evidence_ref : item.provenance_evidence_ref} target="_blank" rel="noreferrer noopener">{role ? 'Ver evidencia de condición académica' : 'Ver evidencia de procedencia'}</a>}
+    {role && Object.entries(item.evidence_metadata || {}).map(([key, value]) => <p key={key}>{key}: {value}</p>)}
+    <label>Motivo {role ? 'solicitud' : 'publicación'} {item.id}<textarea maxLength={500} value={reason} onChange={e => setReason(e.target.value)} disabled={busy || stale} /></label>
+    <button disabled={busy || stale || !reason.trim()} onClick={() => decide('approve')}>Aprobar</button>
+    <button disabled={busy || stale || !reason.trim()} onClick={() => decide('reject')}>Rechazar</button>
+    {busy && <p role="status">Guardando decisión…</p>}
+    {error && <p role="alert">{error}</p>}
+  </section>;
+}
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState('incidencias');
-
-  return (
-    <div className="space-y-8 py-4">
-      
-      {/* Cabecera del Portal Administrativo */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-purple-100 p-6 rounded-3xl border-4 border-ranti-ink shadow-solid">
-        <div className="flex items-center gap-4">
-          <div className="p-4 bg-purple-300 rounded-2xl border-4 border-ranti-ink">
-            <ShieldAlert size={32} strokeWidth={2.5} className="text-ranti-ink" />
-          </div>
-          <div>
-            <h2 className="text-3xl md:text-4xl font-display font-bold text-ranti-ink mb-1">Portal Administrativo</h2>
-            <p className="font-body font-semibold text-gray-700">Moderación, resolución de disputas y auditoría.</p>
-          </div>
-        </div>
-        <div className="bg-white px-4 py-2 rounded-xl border-4 border-ranti-ink font-bold text-sm shadow-solid-sm flex items-center gap-2">
-          <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse border-2 border-ranti-ink"></span>
-          Sistema Operativo
-        </div>
-      </div>
-
-      {/* Tarjetas de Alerta (KPIs de Moderación) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-red-100 p-6 rounded-3xl border-4 border-ranti-ink shadow-solid flex items-center justify-between">
-          <div>
-            <p className="text-sm font-bold text-gray-600 uppercase tracking-wider mb-1">Incidencias Críticas</p>
-            <p className="text-4xl font-display font-bold text-red-600">4</p>
-          </div>
-          <FileWarning size={40} strokeWidth={2} className="text-red-500 opacity-50" />
-        </div>
-
-        <div className="bg-blue-100 p-6 rounded-3xl border-4 border-ranti-ink shadow-solid flex items-center justify-between">
-          <div>
-            <p className="text-sm font-bold text-gray-600 uppercase tracking-wider mb-1">Validaciones Pendientes</p>
-            <p className="text-4xl font-display font-bold text-blue-600">12</p>
-          </div>
-          <UserCheck size={40} strokeWidth={2} className="text-blue-500 opacity-50" />
-        </div>
-
-        <div className="bg-gray-100 p-6 rounded-3xl border-4 border-ranti-ink shadow-solid flex items-center justify-between">
-          <div>
-            <p className="text-sm font-bold text-gray-600 uppercase tracking-wider mb-1">Eventos Auditados (Hoy)</p>
-            <p className="text-4xl font-display font-bold text-gray-800">842</p>
-          </div>
-          <Activity size={40} strokeWidth={2} className="text-gray-500 opacity-50" />
-        </div>
-      </div>
-
-      {/* Navegación Interna (Pestañas) */}
-      <div className="flex gap-2 overflow-x-auto whitespace-nowrap hide-scrollbar pb-2">
-        <button 
-          onClick={() => setActiveTab('incidencias')}
-          className={`px-6 py-3 rounded-full border-4 border-ranti-ink font-display font-bold transition-all flex items-center gap-2 ${
-            activeTab === 'incidencias' ? 'bg-ranti-ink text-white shadow-solid-sm translate-y-[-2px]' : 'bg-white text-ranti-ink hover:bg-gray-50'
-          }`}
-        >
-          <AlertOctagon size={18} /> Incidencias & Disputas
-        </button>
-        <button 
-          onClick={() => setActiveTab('verificaciones')}
-          className={`px-6 py-3 rounded-full border-4 border-ranti-ink font-display font-bold transition-all flex items-center gap-2 ${
-            activeTab === 'verificaciones' ? 'bg-ranti-ink text-white shadow-solid-sm translate-y-[-2px]' : 'bg-white text-ranti-ink hover:bg-gray-50'
-          }`}
-        >
-          <Users size={18} /> Verificación de Egresados
-        </button>
-        <button 
-          onClick={() => setActiveTab('auditoria')}
-          className={`px-6 py-3 rounded-full border-4 border-ranti-ink font-display font-bold transition-all flex items-center gap-2 ${
-            activeTab === 'auditoria' ? 'bg-ranti-ink text-white shadow-solid-sm translate-y-[-2px]' : 'bg-white text-ranti-ink hover:bg-gray-50'
-          }`}
-        >
-          <Activity size={18} /> Bitácora (NIST SP 800-92)
-        </button>
-      </div>
-
-      {/* Contenido Dinámico según la Pestaña */}
-      <div className="bg-white rounded-3xl border-4 border-ranti-ink shadow-solid overflow-hidden">
-        
-        {/* VISTA: INCIDENCIAS */}
-        {activeTab === 'incidencias' && (
-          <>
-            <div className="p-6 border-b-4 border-ranti-ink bg-gray-50 flex justify-between items-center">
-              <h3 className="text-2xl font-display font-bold text-ranti-ink">Cola de Resolución de Disputas</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left font-body font-semibold">
-                <thead className="bg-ranti-light border-b-4 border-ranti-ink text-ranti-ink font-display text-sm uppercase">
-                  <tr>
-                    <th className="p-4 border-r-4 border-ranti-ink">Reporte ID</th>
-                    <th className="p-4 border-r-4 border-ranti-ink">Motivo / Tipo</th>
-                    <th className="p-4 border-r-4 border-ranti-ink">Operación Afectada</th>
-                    <th className="p-4 border-r-4 border-ranti-ink">Fondos Retenidos</th>
-                    <th className="p-4">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="border-b-4 border-ranti-ink hover:bg-red-50 transition-colors">
-                    <td className="p-4 border-r-4 border-ranti-ink">
-                      <span className="block font-bold text-xs text-gray-500 mb-1">Hace 2 horas</span>
-                      #INC-042
-                    </td>
-                    <td className="p-4 border-r-4 border-ranti-ink">
-                      <span className="bg-red-200 text-red-900 text-xs font-bold px-2 py-1 rounded-md border-2 border-red-900">Daño Reportado</span>
-                      <p className="text-sm mt-1">Lente rayado (Cámara Canon)</p>
-                    </td>
-                    <td className="p-4 border-r-4 border-ranti-ink text-sm">
-                      <span className="font-bold">#OP-9982</span> (Alquiler)<br/>
-                      Oferente vs Demandante
-                    </td>
-                    <td className="p-4 border-r-4 border-ranti-ink">
-                      <span className="font-display font-bold text-lg text-ranti-ink">S/ 150.00</span>
-                      <span className="block text-xs text-gray-500">Garantía Escrow</span>
-                    </td>
-                    <td className="p-4">
-                      <button className="text-xs font-bold bg-ranti-ink text-white px-4 py-2 rounded-lg border-2 border-ranti-ink hover:bg-gray-800 transition-colors w-full flex justify-center items-center gap-2">
-                        <Eye size={16}/> Revisar Evidencia
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-        {/* VISTA: VERIFICACIONES */}
-        {activeTab === 'verificaciones' && (
-          <div className="p-10 text-center flex flex-col items-center justify-center">
-            <UserCheck size={64} className="text-blue-300 mb-4" />
-            <h3 className="text-2xl font-display font-bold text-ranti-ink mb-2">Validación Documental</h3>
-            <p className="text-gray-500 font-bold max-w-md">
-              Revisión manual requerida para usuarios egresados que no disponen de correo institucional (@ucsm.edu.pe).
-            </p>
-            {/* Aquí iría la tabla de verificaciones */}
-          </div>
-        )}
-
-        {/* VISTA: AUDITORÍA */}
-        {activeTab === 'auditoria' && (
-          <div className="p-10 text-center flex flex-col items-center justify-center">
-            <Activity size={64} className="text-gray-300 mb-4" />
-            <h3 className="text-2xl font-display font-bold text-ranti-ink mb-2">Bitácora Inmutable</h3>
-            <p className="text-gray-500 font-bold max-w-md">
-              Registro de eventos estructurados y no repudiables conforme a la norma NIST SP 800-92 y Ley N.º 29733.
-            </p>
-            {/* Aquí iría la tabla de logs de solo lectura */}
-          </div>
-        )}
-
-      </div>
-    </div>
-  );
+  const session = getSession();
+  const token = session?.user.role === 'Administrador' ? session.token : null;
+  const [queues, setQueues] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [page, setPage] = useState(0);
+  const [pendingDecisions, setPendingDecisions] = useState(0);
+  useEffect(() => {
+    if (!token) return;
+    let current = true;
+    Promise.all([apiRequest(`/admin/role-requests?limit=20&offset=${page}`, { token }), apiRequest(`/admin/publications/reviews?limit=20&offset=${page}`, { token })])
+      .then(([roles, publications]) => { if (current) setQueues({ roles: roles.items, publications: publications.items }); })
+      .catch(failure => { if (current) setError(failure.message); })
+      .finally(() => { if (current) setLoading(false); });
+    return () => { current = false; };
+  }, [token, revision, page]);
+  function refresh(offset = page) { setQueues(null); setError(''); setNotice(''); setLoading(true); setPage(offset); setRevision(value => value + 1); }
+  function decided(kind, id, message) { setNotice(message); setQueues(previous => ({ ...previous, [kind]: previous[kind].filter(item => item.id !== id) })); }
+  function trackDecision(started) { setPendingDecisions(value => value + (started ? 1 : -1)); }
+  if (!token) return <p role="alert">Solo un Administrador puede revisar estas colas.</p>;
+  return <div className="workflow max-w-4xl mx-auto">
+    <h1>Portal administrativo</h1>
+    <p>Revisión de solicitudes y publicaciones. Disputas y auditoría: pendientes de una fase posterior.</p>
+    <button disabled={loading || pendingDecisions > 0} onClick={() => refresh()}>Actualizar colas</button>
+    {loading && <p role="status">Cargando colas…</p>}
+    {error && <p role="alert">{error}</p>}
+    {notice && <p role="status">{notice}</p>}
+    {queues && <>
+      <h2>Solicitudes de rol</h2>
+      {!queues.roles.length && <p>No hay solicitudes pendientes.</p>}
+      {queues.roles.map(item => <Review key={`role-${item.id}`} item={item} kind="role" token={token} onBusy={trackDecision} onDecided={(id, message) => decided('roles', id, message)} />)}
+      <h2>Publicaciones para revisión</h2>
+      {!queues.publications.length && <p>No hay publicaciones pendientes.</p>}
+      {queues.publications.map(item => <Review key={`pub-${item.id}`} item={item} kind="publication" token={token} onBusy={trackDecision} onDecided={(id, message) => decided('publications', id, message)} />)}
+      <p>Mostrando hasta 20 entradas por cola, desde la posición {page + 1}. Al resolver entradas, actualiza desde el inicio para no omitir pendientes.</p>
+      <button disabled={!page || loading || pendingDecisions > 0} onClick={() => refresh(0)}>Volver al inicio</button>
+      <button disabled={loading || pendingDecisions > 0 || (queues.roles.length < 20 && queues.publications.length < 20)} onClick={() => refresh(page + 20)}>Siguiente página</button>
+    </>}
+  </div>;
 }

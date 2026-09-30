@@ -67,13 +67,17 @@ describe('publicaciones contra el esquema entregado', () => {
   });
 
   it('crea una publicación usando la columna category', async () => {
+    const ownerId = '00000000-0000-4000-8000-000000000002';
+    const draft = { id: '00000000-0000-4000-8000-000000000003', owner_id: ownerId,
+      category: 'Sistemas', status: 'Borrador', risk_level: 1, risk_policy_version: 'pilot-v1' };
     const client = { query: vi.fn(), release: vi.fn() };
     client.query.mockImplementation(async (sql) => {
+      if (sql.includes('FROM users')) return { rows: [{ id: ownerId, status: 'Activa', verification_status: 'Verificado' }] };
       if (sql.includes('INSERT INTO publications')) {
         if (!sql.includes('description, category, condition')) {
           throw new Error('El INSERT no usa la columna category del esquema');
         }
-        return { rows: [{ id: 'pub-1', category: 'Sistemas' }] };
+        return { rows: [draft] };
       }
       return { rows: [] };
     });
@@ -81,7 +85,7 @@ describe('publicaciones contra el esquema entregado', () => {
     const res = response();
 
     await createPublication({
-      user: { id: 'owner-1' },
+      user: { id: ownerId },
       body: {
         title: 'Calculadora', description: 'Equipo', category: 'Sistemas',
         condition: 'Usado', modality: 'Venta', price: 20, guarantee_amount: 0,
@@ -89,7 +93,7 @@ describe('publicaciones contra el esquema entregado', () => {
     }, res);
 
     expect(res.statusCode).toBe(201);
-    expect(res.body.publication).toEqual({ id: 'pub-1', category: 'Sistemas' });
+    expect(res.body.publication).toEqual({ ...draft, images: [] });
     expect(client.release).toHaveBeenCalledOnce();
   });
 });
@@ -111,10 +115,11 @@ describe('detalle público de publicaciones', () => {
 
   it('no expone el correo ni otros datos internos del oferente', async () => {
     db.query.mockImplementation(async (sql) => {
-      if (sql.includes('FROM publication_images')) {
+      if (sql.startsWith('SELECT image_url')) {
         return { rows: [{ image_url: 'https://example.test/foto.jpg', is_primary: true }] };
       }
-      const row = { id: 'pub-1', title: 'Calculadora', owner_reputation_score: '4.50' };
+      const row = { id: 'pub-1', title: 'Calculadora', owner_reputation_score: '4.50',
+        images: [{ image_url: 'https://example.test/foto.jpg', is_primary: true }] };
       if (sql.includes('p.*')) row.owner_id = 'owner-1';
       if (sql.includes('u.email')) row.email = 'persona@ucsm.edu.pe';
       return { rows: [row] };

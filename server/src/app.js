@@ -7,7 +7,7 @@ import { requestContext } from './middlewares/request-context.middleware.js';
 import { errorHandler, notFound } from './middlewares/error.middleware.js';
 
 import authRoutes from './routes/auth.routes.js';
-import publicationRoutes from './routes/publication.routes.js'; 
+import publicationRoutes, { publicationAdminRoutes } from './routes/publication.routes.js';
 import operationRoutes from './routes/operation.routes.js'; 
 import notificationRoutes from './routes/notification.routes.js'; // <- IMPORTACIÓN NUEVA
 import userRoutes, { adminRoutes } from './routes/user.routes.js';
@@ -40,6 +40,7 @@ app.use('/api/operations', operationRoutes);
 app.use('/api/notifications', notificationRoutes); // <- REGISTRO NUEVO
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin', publicationAdminRoutes);
 
 // Ruta de comprobación de salud del servidor (Health Check)
 app.get('/health', (req, res) => {

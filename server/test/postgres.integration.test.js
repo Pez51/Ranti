@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import pg from 'pg';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 
@@ -8,6 +9,8 @@ const enabled = process.env.RANTI_EPHEMERAL_DB === '1' && !!process.env.TEST_DAT
 describe.skipIf(!enabled)('API con PostgreSQL temporal real', () => {
   let app;
   let pool;
+  let cluster;
+  let databaseName;
   let owner;
   let buyer;
   const secret = 'ranti-test-jwt-secret-local-only';
@@ -53,17 +56,26 @@ describe.skipIf(!enabled)('API con PostgreSQL temporal real', () => {
     if (url.hostname !== '127.0.0.1' || url.pathname !== '/ranti_test' || url.username !== 'ranti_test') {
       throw new Error('Las pruebas requieren la instancia desechable del script.');
     }
+    cluster = new pg.Pool({ connectionString: url.href });
+    databaseName = `publication_http_${randomUUID().replaceAll('-', '')}`;
+    await cluster.query(`CREATE DATABASE "${databaseName}"`);
+    url.pathname = `/${databaseName}`;
     process.env.DATABASE_URL = url.href;
     process.env.JWT_SECRET = secret;
+    pool = new pg.Pool({ connectionString: url.href });
+    vi.resetModules(); vi.doMock('../src/config/database.js', () => ({ default: pool }));
     ({ default: app } = await import('../src/app.js'));
-    ({ default: pool } = await import('../src/config/database.js'));
     const { runMigrations } = await import('../src/db/migrate.js');
     await runMigrations(pool);
     owner = await user();
     buyer = await user();
   });
 
-  afterAll(async () => { if (pool) await pool.end(); });
+  afterAll(async () => {
+    vi.doUnmock('../src/config/database.js'); if (pool) await pool.end();
+    if (databaseName) await cluster.query(`DROP DATABASE "${databaseName}"`);
+    if (cluster) await cluster.end();
+  });
 
   it('crea y consulta el catálogo con la migración incluida, sin correo público', async () => {
     const created = await request(app).post('/api/publications').set(auth(owner)).send({
@@ -71,6 +83,8 @@ describe.skipIf(!enabled)('API con PostgreSQL temporal real', () => {
       modality: 'Venta', price: 25, guarantee_amount: 0, images: ['https://example.test/equipo.jpg'],
     });
     expect(created.status).toBe(201);
+    expect(created.body.publication.status).toBe('Borrador');
+    expect((await request(app).post(`/api/publications/${created.body.publication.id}/submit`).set(auth(owner))).status).toBe(200);
     const list = await request(app).get('/api/publications?faculty=Sistemas');
     expect(list.status).toBe(200);
     expect(list.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: created.body.publication.id, category: 'Sistemas' })]));
@@ -97,10 +111,13 @@ describe.skipIf(!enabled)('API con PostgreSQL temporal real', () => {
     expect(res.body.error).not.toMatch(/postgres|syntax|uuid/i);
   });
 
-  it('rechaza una publicación incompleta antes de abrir una transacción', async () => {
+  it('guarda el borrador incompleto y rechaza su envío a publicación', async () => {
     const res = await request(app).post('/api/publications').set(auth(owner)).send({ title: 'Sin datos' });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toEqual(expect.any(String));
+    expect(res.status).toBe(201);
+    expect(res.body.publication.status).toBe('Borrador');
+    const submitted = await request(app).post(`/api/publications/${res.body.publication.id}/submit`).set(auth(owner));
+    expect(submitted.status).toBe(422);
+    expect(submitted.body.error).toEqual(expect.any(String));
   });
 
   it('rechaza una publicación pausada en el detalle público', async () => {

@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import ManagePublications from './ManagePublications';
 import { apiRequest } from '../../lib/api';
@@ -7,6 +8,11 @@ import { change, click, session, publication } from '../../test/workflows';
 vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
 beforeEach(() => { vi.resetAllMocks(); session(); });
 function setup() { render(<MemoryRouter><ManagePublications /></MemoryRouter>); }
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+}
 it.each([['Activa', 'Pausar', 'pause', 'Pausada'], ['Pausada', 'Reactivar', 'reactivate', 'Pendiente de revisión'], ['Borrador', 'Enviar', 'submit', 'Pendiente de revisión'], ['Pendiente de revisión', 'Retirar', 'withdraw', 'Retirada']])('confirms %s lifecycle before requesting %s', async (status, label, action, result) => {
   apiRequest.mockResolvedValueOnce([{ ...publication, status }]).mockResolvedValueOnce({ ...publication, status: result }); setup(); await screen.findByText('Calculadora'); click(label); expect(apiRequest).toHaveBeenCalledTimes(1); expect(screen.getByRole('dialog')).toHaveTextContent(label); click('Confirmar');
   expect(await screen.findByText(`Estado: ${result}`)).toBeInTheDocument(); expect(apiRequest).toHaveBeenLastCalledWith(`/publications/pub-1/${action}`, expect.objectContaining({ method: 'POST', token: 'real-token' }));
@@ -29,4 +35,46 @@ it('can save an incomplete draft with a null price while preserving its optional
   const draft = { ...publication, title: 'Borrador parcial', price: null, guarantee_amount: null, images: [], risk_level: null };
   apiRequest.mockResolvedValueOnce([draft]).mockResolvedValueOnce({ ...draft, title: 'Título corregido' }); setup(); await screen.findByText('Borrador parcial'); click('Editar'); change('Título', 'Título corregido'); click('Guardar cambios');
   expect(await screen.findByText('Título corregido')).toBeInTheDocument(); expect(JSON.parse(apiRequest.mock.calls[1][1].body).price).toBeNull();
+});
+it('blocks refresh while confirmation is open, then closes it before an allowed refresh', async () => {
+  const reload = deferred();
+  apiRequest.mockResolvedValueOnce([{ ...publication, status: 'Activa' }]).mockReturnValueOnce(reload.promise);
+  setup(); await screen.findByText('Calculadora'); click('Pausar');
+  expect(screen.getByRole('button', { name: 'Actualizar publicaciones' })).toBeDisabled();
+  click('Actualizar publicaciones');
+  expect(apiRequest).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  click('Cancelar'); click('Actualizar publicaciones');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Confirmar' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Actualizar publicaciones' })).toBeDisabled();
+  await act(async () => reload.resolve([{ ...publication, status: 'Pausada' }]));
+  expect(screen.getByText('Estado: Pausada')).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+it.each(['before', 'after'])('keeps committed lifecycle state when an obsolete GET resolves %s the mutation', async order => {
+  // StrictMode replays the initial read effect. Keep that obsolete request alive
+  // to model a transport that still delivers a response after cancellation.
+  const obsoleteRead = deferred();
+  const mutation = deferred();
+  apiRequest.mockReturnValueOnce(obsoleteRead.promise)
+    .mockResolvedValueOnce([{ ...publication, status: 'Activa' }])
+    .mockReturnValueOnce(mutation.promise);
+  render(<StrictMode><MemoryRouter><ManagePublications /></MemoryRouter></StrictMode>);
+  await screen.findByText('Calculadora'); click('Pausar');
+  expect(screen.getByRole('button', { name: 'Actualizar publicaciones' })).toBeDisabled();
+  click('Confirmar');
+  expect(screen.getByRole('button', { name: 'Procesando…' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Actualizar publicaciones' })).toBeDisabled();
+  click('Actualizar publicaciones');
+  expect(apiRequest).toHaveBeenCalledTimes(3);
+  if (order === 'before') await act(async () => obsoleteRead.resolve([{ ...publication, status: 'Activa' }]));
+  await act(async () => mutation.resolve({ ...publication, status: 'Pausada' }));
+  if (order === 'after') await act(async () => obsoleteRead.resolve([{ ...publication, status: 'Activa' }]));
+  expect(screen.getByText('Estado: Pausada')).toBeInTheDocument();
+  expect(screen.queryByText('Estado: Activa')).not.toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Actualizar publicaciones' })).toBeEnabled();
 });

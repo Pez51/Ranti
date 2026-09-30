@@ -6,7 +6,7 @@ import pg from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const enabled = process.env.RANTI_EPHEMERAL_DB === '1' && !!process.env.TEST_DATABASE_URL;
-const migrationNames = ['001_init.sql', '002_foundations.sql', '003_identity_publications.sql'];
+const migrationNames = ['001_init.sql', '002_foundations.sql', '003_identity_publications.sql', '004_publication_image_positions.sql'];
 
 describe.skipIf(!enabled)('Phase 2 identity and publication migration', () => {
   let admin;
@@ -64,7 +64,7 @@ describe.skipIf(!enabled)('Phase 2 identity and publication migration', () => {
       expect(checksum).toBe(createHash('sha256').update(bytes).digest('hex'));
     }
     expect(await runMigrations(db)).toEqual({ applied: [], skipped: migrationNames });
-    expect((await db.query('SELECT count(*)::int AS count FROM schema_migrations')).rows[0].count).toBe(3);
+    expect((await db.query('SELECT count(*)::int AS count FROM schema_migrations')).rows[0].count).toBe(4);
   });
 
   it('upgrades recorded 001+002 without changing legacy user and publication data or relationships', async () => {
@@ -76,7 +76,7 @@ describe.skipIf(!enabled)('Phase 2 identity and publication migration', () => {
       VALUES ($1, 'Legacy title', 'Legacy description', 'Books', 'Used', 'Venta', 25.50, 'Activa') RETURNING id`,
     [ownerId])).rows[0].id;
 
-    expect(await runMigrations(db)).toEqual({ applied: ['003_identity_publications.sql'], skipped: migrationNames.slice(0, 2) });
+    expect(await runMigrations(db)).toEqual({ applied: migrationNames.slice(2), skipped: migrationNames.slice(0, 2) });
     expect((await db.query('SELECT id, email, password_hash, role FROM users WHERE id = $1', [ownerId])).rows[0])
       .toMatchObject({ id: ownerId, email: 'legacy-owner@example.test', password_hash: 'legacy-password-hash', role: 'Egresado' });
     expect((await db.query(`SELECT id, owner_id, title, description, category, condition, modality,
@@ -97,6 +97,39 @@ describe.skipIf(!enabled)('Phase 2 identity and publication migration', () => {
     await expect(db.query('UPDATE publications SET reviewed_by = $1 WHERE id = $2', [randomUUID(), publicationId]))
       .rejects.toMatchObject({ code: '23503' });
     expect(await runMigrations(db)).toEqual({ applied: [], skipped: migrationNames });
+  });
+
+  async function legacyImages(count = 4) {
+    for (const name of migrationNames.slice(0, 3)) await writeFile(join(directory, name),
+      await readFile(new URL(`../src/db/migrations/${name}`, import.meta.url)));
+    await runMigrations(db, { directory });
+    const owner = await insertUser('images@ucsm.edu.pe');
+    const id = (await db.query(`INSERT INTO publications (owner_id,title,description,category,condition,modality)
+      VALUES ($1,'Title','Description','Category','Used','Venta') RETURNING id`, [owner])).rows[0].id;
+    // Primary first, then timestamp and UUID is the specified deterministic legacy order.
+    for (let i = 0; i < count; i++) await db.query(`INSERT INTO publication_images
+      (id,publication_id,image_url,is_primary,created_at) VALUES ($1,$2,$3,$4,'2026-09-01')`,
+    [`00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`, id, `https://images.test/${i}`, i === 2]);
+    return id;
+  }
+  it('backfills stable zero-based image positions on recorded 003 and enforces null/range/uniqueness constraints', async () => {
+    const id = await legacyImages();
+    expect(await runMigrations(db)).toEqual({ applied: ['004_publication_image_positions.sql'], skipped: migrationNames.slice(0, 3) });
+    expect((await db.query('SELECT image_url,position FROM publication_images WHERE publication_id=$1 ORDER BY position', [id])).rows)
+      .toEqual([{ image_url: 'https://images.test/2', position: 0 }, { image_url: 'https://images.test/0', position: 1 },
+        { image_url: 'https://images.test/1', position: 2 }, { image_url: 'https://images.test/3', position: 3 }]);
+    const sql = 'INSERT INTO publication_images (publication_id,image_url,position) VALUES ($1,\'https://images.test/new\',$2)';
+    await expect(db.query(sql, [id, null])).rejects.toMatchObject({ code: '23502' });
+    for (const position of [-1, 4]) await expect(db.query(sql, [id, position])).rejects.toMatchObject({ code: '23514' });
+    await expect(db.query(sql, [id, 1])).rejects.toMatchObject({ code: '23505' });
+    expect(await runMigrations(db)).toEqual({ applied: [], skipped: migrationNames });
+  });
+  it('fails image-position migration atomically rather than discarding legacy galleries above four images', async () => {
+    const id = await legacyImages(5);
+    await expect(runMigrations(db)).rejects.toThrow();
+    expect((await db.query('SELECT image_url FROM publication_images WHERE publication_id=$1', [id])).rows).toHaveLength(5);
+    expect((await db.query("SELECT column_name FROM information_schema.columns WHERE table_name='publication_images' AND column_name='position'")).rows).toEqual([]);
+    expect((await db.query('SELECT name FROM schema_migrations ORDER BY name')).rows.map(r => r.name)).toEqual(migrationNames.slice(0, 3));
   });
 
   it('stores hashed challenges with bounded attempts, valid lifecycle states, and normalized email', async () => {

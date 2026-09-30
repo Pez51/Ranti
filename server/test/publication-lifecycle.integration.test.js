@@ -288,4 +288,76 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
       expect((await db.query('SELECT image_url FROM publication_images WHERE publication_id=$1', [pub.id])).rows).toEqual([{ image_url: valid.images[0] }]);
     } finally { await db.query(`ALTER TABLE ${table} DROP CONSTRAINT ${constraint}`); }
   });
+  async function unorderedImageIds(id, urls) {
+    const prefix = randomUUID().slice(0, 24);
+    // UUID order deliberately opposes insertion order; timestamps are shared
+    // because all rows are inserted in the same transaction.
+    for (let i = 0; i < urls.length; i++) await db.query(
+      'UPDATE publication_images SET id=$3 WHERE publication_id=$1 AND image_url=$2',
+      [id, urls[i], `${prefix}${String(10 - i).padStart(12, '0')}`]);
+  }
+  it.each([3, 4])('round-trips %i images in submitted order through owner, admin and public reads', async count => {
+    const urls = Array.from({ length: count }, (_, i) => `https://images.example.test/ordered-${i}`);
+    const pub = await create({ price: 1000, images: urls, provenance_evidence_ref: evidence });
+    await unorderedImageIds(pub.id, urls);
+    expect((await service.listOwnPublications(db, owner)).find(p => p.id === pub.id).images).toEqual(urls);
+    const pending = await submit(pub.id); expect(pending.images).toEqual(urls);
+    const queue = await service.listPendingPublicationReviews(db, admin, { limit: 100 });
+    expect(queue.items.find(p => p.id === pub.id).images).toEqual(urls);
+    await review(pending);
+    expect((await service.getPublicPublication(db, pub.id)).images.map(image => image.image_url)).toEqual(urls);
+  });
+  it.each([500, 1000])('identical four-image PATCH preserves approval and effects at exposure %i', async price => {
+    const urls = [0, 1, 2, 3].map(i => `https://images.example.test/noop-${i}`);
+    const pub = await create({ price, images: urls, provenance_evidence_ref: evidence });
+    await unorderedImageIds(pub.id, urls);
+    await review(await submit(pub.id));
+    const before = await row(pub.id); const recorded = await effects(pub.id);
+    const imageRows = (await db.query('SELECT * FROM publication_images WHERE publication_id=$1 ORDER BY id', [pub.id])).rows;
+    const patched = await service.updatePublication(db, owner, pub.id, { images: urls });
+    expect(patched.status).toBe('Activa'); expect(patched.images).toEqual(urls);
+    expect(await row(pub.id)).toEqual(before); expect(await effects(pub.id)).toEqual(recorded);
+    expect((await db.query('SELECT * FROM publication_images WHERE publication_id=$1 ORDER BY id', [pub.id])).rows).toEqual(imageRows);
+  });
+  it('audits each returned provenance reference access and denies non-current administrators without disclosure', async () => {
+    const withEvidence = await create({ price: 1000, provenance_evidence_ref: evidence }); await submit(withEvidence.id);
+    const withoutEvidence = await create({ price: 500 }); await submit(withoutEvidence.id);
+    const reviewer = await user('Administrador');
+    const access = async () => (await db.query("SELECT * FROM audit_logs WHERE actor_id=$1 AND action='publication.evidence.viewed'", [reviewer])).rows;
+    const queue = await service.listPendingPublicationReviews(db, reviewer, { limit: 100 });
+    const expectedIds = queue.items.filter(p => p.provenance_evidence_ref).map(p => p.id).sort();
+    const logged = await access();
+    expect(logged.map(a => a.entity_id).sort()).toEqual(expectedIds);
+    expect(logged.find(a => a.entity_id === withEvidence.id)).toMatchObject({ actor_id: reviewer,
+      entity_type: 'publication', old_values: null, new_values: null,
+      metadata: { source: 'admin-publication-review-queue' } });
+    expect(logged.some(a => a.entity_id === withoutEvidence.id)).toBe(false);
+    expect(JSON.stringify(logged)).not.toContain(evidence);
+    expect((await effects(withEvidence.id)).outbox.filter(e => e.event_type === 'publication.evidence.viewed')).toEqual([]);
+    await service.listPendingPublicationReviews(db, reviewer, { limit: 100 });
+    expect(await access()).toHaveLength(expectedIds.length * 2);
+    for (const column of ['role', 'status', 'verification_status']) {
+      const value = column === 'role' ? 'Egresado' : column === 'status' ? 'Suspendida' : 'No verificado';
+      await db.query(`UPDATE users SET ${column}=$2 WHERE id=$1`, [reviewer, value]);
+      await expect(service.listPendingPublicationReviews(db, reviewer)).rejects.toMatchObject({ status: 403 });
+      expect(await access()).toHaveLength(expectedIds.length * 2);
+      await db.query("UPDATE users SET role='Administrador',status='Activa',verification_status='Verificado' WHERE id=$1", [reviewer]);
+    }
+  });
+  it('returns no review data and rolls back all evidence-access audit rows if one audit insert fails', async () => {
+    const first = await create({ price: 1000, provenance_evidence_ref: evidence }); await submit(first.id);
+    const second = await create({ price: 1000, provenance_evidence_ref: 'https://evidence.example.test/second' }); await submit(second.id);
+    const reviewer = await user('Administrador');
+    const constraint = `evidence_${randomUUID().replaceAll('-', '')}`;
+    await db.query(`ALTER TABLE audit_logs ADD CONSTRAINT ${constraint}
+      CHECK (actor_id <> '${reviewer}'::uuid OR entity_id <> '${second.id}'::uuid) NOT VALID`);
+    try {
+      const response = await request(app).get('/api/admin/publications/reviews?limit=100').set(auth(reviewer));
+      expect(response.status).toBe(500); expect(response.body).not.toHaveProperty('items');
+      expect(JSON.stringify(response.body)).not.toContain('https://');
+      expect((await db.query('SELECT id FROM audit_logs WHERE actor_id=$1', [reviewer])).rows).toEqual([]);
+      expect((await row(first.id)).status).toBe('Pendiente de revisión');
+      expect((await row(second.id)).status).toBe('Pendiente de revisión');
+    } finally { await db.query(`ALTER TABLE audit_logs DROP CONSTRAINT ${constraint}`); }
+  });
 });

@@ -70,7 +70,7 @@ async function locked(client, id, ownerId) {
   const row = (await client.query(`SELECT * FROM publications WHERE id=$1
     ${ownerId ? 'AND owner_id=$2' : ''} FOR UPDATE`, ownerId ? [uuid(id), ownerId] : [uuid(id)])).rows[0];
   if (!row) throw missing();
-  row.images = (await client.query('SELECT image_url FROM publication_images WHERE publication_id=$1 ORDER BY is_primary DESC, created_at, id', [id])).rows.map(p => p.image_url);
+  row.images = (await client.query('SELECT image_url FROM publication_images WHERE publication_id=$1 ORDER BY position', [id])).rows.map(p => p.image_url);
   return row;
 }
 
@@ -99,7 +99,7 @@ function validateWindow(row) {
 async function images(client, id, urls) {
   await client.query('DELETE FROM publication_images WHERE publication_id=$1', [id]);
   for (let i = 0; i < urls.length; i++) await client.query(
-    'INSERT INTO publication_images (publication_id,image_url,is_primary) VALUES ($1,$2,$3)', [id, urls[i], i === 0]);
+    'INSERT INTO publication_images (publication_id,image_url,is_primary,position) VALUES ($1,$2,$3,$4)', [id, urls[i], i === 0, i]);
 }
 async function effects(client, actorId, action, before, after) {
   // Allowlist: neither evidence nor free text (including review reason) enters
@@ -201,7 +201,7 @@ export const withdrawPublication = (db, ownerId, id) => lifecycle(db, ownerId, i
 
 export async function listOwnPublications(db, ownerId) {
   requireCurrentUser((await db.query('SELECT * FROM users WHERE id=$1', [uuid(ownerId)])).rows[0]);
-  return (await db.query(`SELECT p.*, COALESCE((SELECT json_agg(image_url ORDER BY is_primary DESC, created_at, id)
+  return (await db.query(`SELECT p.*, COALESCE((SELECT json_agg(image_url ORDER BY position)
     FROM publication_images WHERE publication_id=p.id),'[]'::json) AS images
     FROM publications p WHERE owner_id=$1 ORDER BY created_at DESC, id DESC`, [ownerId])).rows;
 }
@@ -213,9 +213,15 @@ export async function listPendingPublicationReviews(db, adminId, page = {}) {
       !Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0 || offset > 100000) throw invalid();
   return transaction(db, async client => {
     await actor(client, adminId, true);
-    const { rows } = await client.query(`SELECT p.*, COALESCE((SELECT json_agg(image_url ORDER BY is_primary DESC, created_at, id)
+    const { rows } = await client.query(`SELECT p.*, COALESCE((SELECT json_agg(image_url ORDER BY position)
       FROM publication_images WHERE publication_id=p.id),'[]'::json) AS images
       FROM publications p WHERE status='Pendiente de revisión' ORDER BY submitted_at, id LIMIT $1 OFFSET $2`, [limit, offset]);
+    // Evidence access is sensitive: return no rows unless every access record
+    // commits. Log only actor/entity/source, never the reference or its content.
+    for (const row of rows) if (row.provenance_evidence_ref) await appendAudit(client, {
+      actorId: adminId, action: 'publication.evidence.viewed', entityType: 'publication', entityId: row.id,
+      metadata: { source: 'admin-publication-review-queue' },
+    });
     return { items: rows, limit, offset };
   });
 }
@@ -279,7 +285,7 @@ export async function getPublicPublication(db, id) {
     p.price, p.guarantee_amount, p.available_from, p.available_until, p.created_at,
     u.reputation_score AS owner_reputation_score,
     COALESCE((SELECT json_agg(json_build_object('image_url', image_url, 'is_primary', is_primary)
-      ORDER BY is_primary DESC, created_at, id) FROM publication_images WHERE publication_id=p.id),'[]'::json) AS images
+      ORDER BY position) FROM publication_images WHERE publication_id=p.id),'[]'::json) AS images
     FROM publications p JOIN users u ON u.id=p.owner_id WHERE p.id=$1 AND p.status = 'Activa'`, [uuid(id)])).rows[0];
   if (!row) throw missing(); return row;
 }

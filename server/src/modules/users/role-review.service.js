@@ -50,6 +50,14 @@ function publicRequest(row) {
     created_at: row.created_at };
 }
 
+// Administrative decisions never grant evidence access. Evidence is available
+// to administrators only through the separately audited pending queue.
+function publicDecision(row) {
+  return { id: row.id, user_id: row.user_id, requested_role: row.requested_role,
+    status: row.status, reviewed_by: row.reviewed_by, review_reason: row.review_reason,
+    reviewed_at: row.reviewed_at, created_at: row.created_at };
+}
+
 export async function requestStudentRole(db, input) {
   if (!input || !uuid(input.userId) || !validHttpsReference(input.evidence_ref) ||
       Object.keys(input).some(key => !['userId', 'evidence_ref', 'evidence_metadata'].includes(key))) throw invalid();
@@ -113,7 +121,7 @@ export async function decideStudentRole(db, input) {
     const status = input.decision === 'approve' ? 'approved' : 'rejected';
     if (row.status !== 'pending') {
       if (row.status !== status) throw conflict();
-      return publicRequest(row);
+      return publicDecision(row);
     }
     requireCurrentUser(user);
     if (user.role !== 'Egresado') throw forbidden();
@@ -129,6 +137,6 @@ export async function decideStudentRole(db, input) {
       eventType: 'identity.role-request.decided',
       payload: { requestId: row.id, userId: row.user_id, reviewerId: input.adminId, outcome: status },
       deduplicationKey: `identity.role-request.decided:${row.id}` });
-    return publicRequest(decided);
+    return publicDecision(decided);
   });
 }

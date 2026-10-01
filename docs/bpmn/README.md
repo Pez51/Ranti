@@ -1,6 +1,6 @@
 # BPMN de Fase 2 — evidencia del código actual
 
-Base revisada: `6059ff1`, 2026-09-30. No se usa el grafo obsoleto como prueba. Los modelos describen peticiones implementadas, no procesos ejecutables ni aprobación institucional real.
+Base revisada: `6ab28a5` más la corrección final de privacidad, 2026-09-30. No se usa el grafo obsoleto como prueba. Los modelos describen peticiones implementadas, no procesos ejecutables ni aprobación institucional real.
 
 - [Identidad y revisión de rol](identity-verification-and-role-review.bpmn) · [SVG](identity-verification-and-role-review.svg)
 - [Riesgo y ciclo de publicaciones](publication-risk-and-lifecycle.bpmn) · [SVG](publication-risk-and-lifecycle.svg)
@@ -27,12 +27,12 @@ Las rutas indicadas sin prefijo de carpeta en esta tabla están bajo `server/src
 - Registro inválido por dominio/términos: 400; correo duplicado: 409. Cuenta pendiente se guarda antes del proveedor; indisponibilidad conserva la cuenta. Reenvío invalida desafíos previos.
 - `IDENTITY_INVALID_CHALLENGE`: incorrecto, expirado, agotado, consumido/reutilizado o incongruente. Incorrecto/expirado confirman contabilidad y luego rechazan; caída durante confirmación hace rollback sin consumir intento. Verificación válida activa Egresado; fallo audit/outbox revierte estado y consumo.
 - Evidencia de rol: HTTPS opaco con metadatos allowlist, no archivo binario. `ROLE_REQUEST_PENDING` protege duplicado pendiente. Cola privada requiere admin vigente y auditoría antes de revelar; titular ve su historial.
-- Decisión de rol repetida con mismo outcome devuelve decisión existente, aunque motivo/admin difieran. Opuesta: 409. Aprobación cambia a Estudiante, rechazo conserva Egresado; fallo audit/outbox revierte ambos.
+- Decisión de rol repetida con mismo outcome devuelve decisión existente, aunque motivo/admin difieran. Opuesta: 409. Tanto la respuesta inicial como la repetida excluyen `evidence_ref` y `evidence_metadata` mediante `publicDecision`; no duplican efectos. Aprobación cambia a Estudiante, rechazo conserva Egresado; fallo audit/outbox revierte ambos.
 - Publicación nace Borrador; `draft-modality-unset` evita convertir el centinela Venta en elección del usuario. Solo Activa es pública. Envío valida modalidad/economía/fechas/textos y 1–4 imágenes HTTPS; migración 004 fija posición.
 - `pilot-v1`: max(precio, garantía), centavos exactos. 499.99 → nivel 1; 500 y 999.99 → nivel 2; 1000 → nivel 3. S/500 exige revisión; S/1000 exige procedencia HTTPS. Falta de procedencia rechaza con 422 antes de publicar.
 - Edición Activa y reactivación recalculan; editando Pausada se valida pero permanece Pausada; Borrador admite incompletitud. Edición idéntica no reinicia revisión.
 - `PUBLICATION_CONFLICT`: operación fuera de Pendiente/Cancelada/Cerrada, estado imposible, decisión conflictiva o `submittedAt` obsoleto. Filas se bloquean y estado se reevalúa después de espera. Retirada terminal; repetir retiro retorna sin efectos.
-- Revisión de publicación idéntica exige mismo administrador, motivo normalizado, resultado y envío. Aprobación revalida requisitos; rechazo devuelve Borrador. Lectura de procedencia escribe auditoría sin outbox; fallo revierte accesos y oculta toda la cola.
+- Revisión de publicación idéntica exige mismo administrador, motivo normalizado, resultado y envío; otro administrador recibe 409. Aprobación revalida requisitos; rechazo devuelve Borrador. `publicReviewDecision` excluye `provenance_evidence_ref` y otros campos privados tanto en respuesta inicial como repetida. En ambas familias, solo las colas administrativas revelan evidencia y auditan cada lectura antes de responder; el titular conserva acceso propio. Lectura de procedencia escribe auditoría sin outbox; fallo revierte accesos y oculta toda la cola.
 - Todos los cambios efectivos de publicación confirman datos/imágenes/auditoría/outbox conjuntamente. En dibujos, gateway de COMMIT resume fallo de cualquiera de esos pasos; no implica que un error SQL pueda continuar dentro de una transacción abortada.
 
 Por confirmar: alta operativa de administradores, gobierno de términos/proveedores, retención de evidencia, control de acceso del servidor remoto de referencias y despliegue del worker. No se modelan como capacidades disponibles. Sin proveedor real/SSO, correo, carga binaria, almacén privado de objetos o browser E2E. Hay productores outbox de identidad/decisión de rol/publicación; no scheduler/daemon ni productores para los flujos posteriores/notificaciones completas. Fases posteriores y RNF de aceptación pendientes.
@@ -130,7 +130,7 @@ Prueba de familia: [server/test/profile-and-role-review.integration.test.js](../
 | `RoleReview_queueError` | endEvent: Error: rollback; sin revelar evidencia | `server/src/modules/users/role-review.service.js::transaction`; `server/src/modules/users/role-review.service.js::listPendingRoleRequests` | Confirmada |
 | `RoleReview_locked` | serviceTask: BEGIN; bloquear usuarios por UUID y solicitud | `server/src/modules/users/role-review.service.js::decideStudentRole` | Confirmada |
 | `RoleReview_status` | exclusiveGateway: ¿Estado y decisión? | `server/src/modules/users/role-review.service.js::decideStudentRole` | Confirmada |
-| `RoleReview_same` | endEvent: Éxito: misma decisión, sin nuevos efectos | `server/src/modules/users/role-review.service.js::decideStudentRole` — Mismo outcome basta, aun si motivo/admin difieren; no se reescribe resultado. | Confirmada |
+| `RoleReview_same` | endEvent: Éxito: misma decisión, sin nuevos efectos | `server/src/modules/users/role-review.service.js::decideStudentRole`, `publicDecision` — Mismo outcome basta, aun si motivo/admin difieren; no se reescribe resultado ni se devuelve evidencia. | Confirmada |
 | `RoleReview_conflict` | endEvent: Rechazo 409: decisión conflictiva | `server/src/modules/users/role-review.service.js::decideStudentRole` | Confirmada |
 | `RoleReview_owner` | exclusiveGateway: ¿Solicitante sigue Egresado habilitado? | `server/src/modules/users/role-review.service.js::decideStudentRole` | Confirmada |
 | `RoleReview_forbidden` | endEvent: Rechazo 403; rollback | `server/src/modules/users/role-review.service.js::decideStudentRole`; `server/src/modules/users/role-review.service.js::requireCurrentUser` | Confirmada |
@@ -139,11 +139,11 @@ Prueba de familia: [server/test/profile-and-role-review.integration.test.js](../
 | `RoleReview_reject` | serviceTask: pending → rejected; conserva Egresado | `server/src/modules/users/role-review.service.js::decideStudentRole` | Confirmada |
 | `RoleReview_effects` | serviceTask: Auditoría + outbox; COMMIT | `server/src/modules/users/role-review.service.js::decideStudentRole`; `server/src/modules/users/role-review.service.js::transaction` | Confirmada |
 | `RoleReview_committed` | exclusiveGateway: ¿Efectos confirmados? | `server/src/modules/users/role-review.service.js::transaction` | Confirmada |
-| `RoleReview_success` | endEvent: Éxito: aprobado; rol Estudiante | `server/src/modules/users/role-review.service.js::decideStudentRole` | Confirmada |
+| `RoleReview_success` | endEvent: Éxito: aprobado; rol Estudiante | `server/src/modules/users/role-review.service.js::decideStudentRole`, `publicDecision` — Respuesta sin evidence_ref ni evidence_metadata. | Confirmada |
 | `RoleReview_error` | endEvent: Error 500: rollback rol/decisión/efectos | `server/src/modules/users/role-review.service.js::transaction` | Confirmada |
 | `RoleReview_data` | dataObjectReference: Solicitud, motivo privado, audit y outbox | `server/src/modules/users/role-review.service.js::decideStudentRole` | Confirmada |
 | `RoleReview_outcome` | exclusiveGateway: ¿Resultado confirmado? | `server/src/modules/users/role-review.service.js::decideStudentRole` | Confirmada |
-| `RoleReview_rejection` | endEvent: Decisión rechazada; conserva Egresado | `server/src/modules/users/role-review.service.js::decideStudentRole` | Confirmada |
+| `RoleReview_rejection` | endEvent: Decisión rechazada; conserva Egresado | `server/src/modules/users/role-review.service.js::decideStudentRole`, `publicDecision` — Respuesta sin evidence_ref ni evidence_metadata. | Confirmada |
 
 ### publication-risk-and-lifecycle
 
@@ -230,7 +230,7 @@ Prueba de familia: [server/test/publication-lifecycle.integration.test.js](../..
 | `PublicationReview_auth` | exclusiveGateway: ¿Admin vigente y entrada válida? | `server/src/modules/publications/publication.service.js::actor`; `server/src/modules/publications/publication.service.js::decidePublicationReview`; `server/src/modules/publications/publication.service.js::listPendingPublicationReviews`; `server/src/middlewares/auth.middleware.js` | Confirmada |
 | `PublicationReview_denied` | endEvent: Rechazo 400/401/403/404 | `server/src/modules/publications/publication.service.js::actor`; `server/src/modules/publications/publication.service.js::locked`; `server/src/modules/publications/publication.service.js::decidePublicationReview` | Confirmada |
 | `PublicationReview_kind` | exclusiveGateway: ¿Consulta o decisión? | `server/src/modules/publications/publication.service.js::listPendingPublicationReviews`; `server/src/modules/publications/publication.service.js::decidePublicationReview` | Confirmada |
-| `PublicationReview_queue` | serviceTask: Leer pending; auditar referencias; COMMIT | `server/src/modules/publications/publication.service.js::listPendingPublicationReviews` — publication.evidence.viewed por fila con referencia; solo auditoría, sin evento outbox de lectura. | Confirmada |
+| `PublicationReview_queue` | serviceTask: Leer Pendiente de revisión; auditar referencias; COMMIT | `server/src/modules/publications/publication.service.js::listPendingPublicationReviews` — publication.evidence.viewed por fila con referencia; solo auditoría, sin evento outbox de lectura. | Confirmada |
 | `PublicationReview_queueOk` | exclusiveGateway: ¿Auditoría confirmada? | `server/src/modules/publications/publication.service.js::transaction`; `server/src/modules/publications/publication.service.js::listPendingPublicationReviews` | Confirmada |
 | `PublicationReview_queueEnd` | endEvent: Éxito: cola privada (incluye vacía) | `server/src/modules/publications/publication.service.js::listPendingPublicationReviews` | Confirmada |
 | `PublicationReview_queueError` | endEvent: Error: rollback accesos; no revelar filas | `server/src/modules/publications/publication.service.js::transaction`; `server/src/modules/publications/publication.service.js::listPendingPublicationReviews` | Confirmada |
@@ -238,7 +238,7 @@ Prueba de familia: [server/test/publication-lifecycle.integration.test.js](../..
 | `PublicationReview_stamp` | exclusiveGateway: ¿submittedAt coincide con envío actual? | `server/src/modules/publications/publication.service.js::decidePublicationReview` | Confirmada |
 | `PublicationReview_stale` | endEvent: Rechazo 409: envío obsoleto | `server/src/modules/publications/publication.service.js::decidePublicationReview` | Confirmada |
 | `PublicationReview_status` | exclusiveGateway: ¿Pendiente o repetición exacta? | `server/src/modules/publications/publication.service.js::decidePublicationReview` | Confirmada |
-| `PublicationReview_same` | endEvent: Éxito: repetición sin efectos | `server/src/modules/publications/publication.service.js::decidePublicationReview` — Requiere mismo outcome, admin, motivo normalizado y submittedAt. | Confirmada |
+| `PublicationReview_same` | endEvent: Éxito: repetición sin efectos | `server/src/modules/publications/publication.service.js::decidePublicationReview`, `publicReviewDecision` — Requiere mismo outcome, admin, motivo normalizado y submittedAt; otro administrador recibe 409. Respuesta sin evidencia; no duplica efectos. | Confirmada |
 | `PublicationReview_conflict` | endEvent: Rechazo 409: decisión / operación conflictiva | `server/src/modules/publications/publication.service.js::decidePublicationReview`; `server/src/modules/publications/publication.service.js::unblocked` | Confirmada |
 | `PublicationReview_unblocked` | exclusiveGateway: ¿Sin operación bloqueante? | `server/src/modules/publications/publication.service.js::unblocked` | Confirmada |
 | `PublicationReview_decision` | exclusiveGateway: ¿approve o reject? | `server/src/modules/publications/publication.service.js::decidePublicationReview` | Confirmada |
@@ -248,11 +248,11 @@ Prueba de familia: [server/test/publication-lifecycle.integration.test.js](../..
 | `PublicationReview_reject` | serviceTask: Pendiente de revisión → Borrador | `server/src/modules/publications/publication.service.js::decidePublicationReview` | Confirmada |
 | `PublicationReview_effects` | serviceTask: Guardar revisión; auditoría + outbox | `server/src/modules/publications/publication.service.js::decidePublicationReview`; `server/src/modules/publications/publication.service.js::persist`; `server/src/modules/publications/publication.service.js::effects` | Confirmada |
 | `PublicationReview_commit` | exclusiveGateway: ¿COMMIT correcto? | `server/src/modules/publications/publication.service.js::transaction` | Confirmada |
-| `PublicationReview_success` | endEvent: Éxito: aprobación Activa | `server/src/modules/publications/publication.service.js::decidePublicationReview` | Confirmada |
+| `PublicationReview_success` | endEvent: Éxito: aprobación Activa | `server/src/modules/publications/publication.service.js::decidePublicationReview`, `publicReviewDecision` — Respuesta sin provenance_evidence_ref ni otros campos privados de evidencia. | Confirmada |
 | `PublicationReview_error` | endEvent: Error 500: rollback decisión/efectos | `server/src/modules/publications/publication.service.js::transaction` | Confirmada |
 | `PublicationReview_data` | dataObjectReference: Referencia privada, submitted_at, revisión | `server/src/modules/publications/publication.service.js::decidePublicationReview`; `server/src/modules/publications/publication.service.js::listPendingPublicationReviews` | Confirmada |
 | `PublicationReview_outcome` | exclusiveGateway: ¿Decisión confirmada? | `server/src/modules/publications/publication.service.js::decidePublicationReview` | Confirmada |
-| `PublicationReview_rejection` | endEvent: Rechazada: Borrador para corrección | `server/src/modules/publications/publication.service.js::decidePublicationReview` | Confirmada |
+| `PublicationReview_rejection` | endEvent: Rechazada: Borrador para corrección | `server/src/modules/publications/publication.service.js::decidePublicationReview`, `publicReviewDecision` — Respuesta sin provenance_evidence_ref ni otros campos privados de evidencia. | Confirmada |
 
 ## Validación y render reproducibles
 

@@ -4,11 +4,12 @@ import { env } from '../../config/env.js';
 import { appendAudit } from '../audit/audit.repository.js';
 import { enqueueOutboxEvent } from '../outbox/outbox.repository.js';
 import { isUcsmInstitutionalEmail } from './identity-provider.js';
+import { passwordInput } from './password-input.js';
 
 const email = z.string().trim().toLowerCase().refine(isUcsmInstitutionalEmail);
 const registrationInput = z.object({
   email,
-  password: z.string().min(8).max(72).refine(value => Buffer.byteLength(value, 'utf8') <= 72),
+  password: passwordInput,
   acceptTerms: z.literal(true),
   termsVersion: z.string().trim().min(1).max(100),
   academic_condition: z.string().trim().max(100).optional(),

@@ -226,6 +226,16 @@ export async function listPendingPublicationReviews(db, adminId, page = {}) {
   });
 }
 
+// Explicit projection prevents private evidence (including future fields) from
+// escaping through either an initial decision or an idempotent retry.
+function publicReviewDecision(row) {
+  const fields = ['id', 'owner_id', 'title', 'description', 'category', 'condition', 'modality',
+    'price', 'guarantee_amount', 'status', 'risk_level', 'risk_policy_version', 'available_from',
+    'available_until', 'submitted_at', 'reviewed_by', 'review_reason', 'reviewed_at',
+    'published_at', 'created_at', 'updated_at', 'images'];
+  return Object.fromEntries(fields.map(key => [key, row[key]]));
+}
+
 export async function decidePublicationReview(db, adminId, id, input) {
   if (!object(input) || Object.keys(input).some(key => !['decision', 'reason', 'submittedAt'].includes(key)) ||
       !['approve', 'reject'].includes(input.decision) || typeof input.reason !== 'string' || !input.reason.trim() ||
@@ -237,7 +247,7 @@ export async function decidePublicationReview(db, adminId, id, input) {
     if (before.submitted_at?.toISOString() !== input.submittedAt) throw conflict();
     const target = input.decision === 'approve' ? 'Activa' : 'Borrador';
     if (before.status !== 'Pendiente de revisión') {
-      if (before.reviewed_at && before.status === target && before.reviewed_by === adminId && before.review_reason === input.reason.trim()) return before;
+      if (before.reviewed_at && before.status === target && before.reviewed_by === adminId && before.review_reason === input.reason.trim()) return publicReviewDecision(before);
       throw conflict();
     }
     await unblocked(client, id); const row = { ...before };
@@ -246,7 +256,7 @@ export async function decidePublicationReview(db, adminId, id, input) {
       row.published_at = new Date();
     }
     row.status = target; row.reviewed_by = adminId; row.review_reason = input.reason.trim(); row.reviewed_at = new Date();
-    const changed = await persist(client, row); await effects(client, adminId, `review-${input.decision}`, before, changed); return changed;
+    const changed = await persist(client, row); await effects(client, adminId, `review-${input.decision}`, before, changed); return publicReviewDecision(changed);
   });
 }
 

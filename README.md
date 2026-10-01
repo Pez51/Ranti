@@ -83,6 +83,8 @@ Desafío de seis dígitos generado criptográficamente, hash bcrypt, diez minuto
 
 Verificación válida activa la cuenta, conserva Egresado, consume desafío y escribe auditoría/outbox atómicamente; fallo revierte todo. Confirmación/login devuelven `{ token, user }`; JWT vence a las 24 horas. Login rechaza uniformemente cuenta pendiente, suspendida, no verificada o credenciales inválidas. Middleware consulta estado/rol vigentes en cada petición.
 
+Registro y login comparten la misma regla de contraseña: 8–72 caracteres y como máximo 72 bytes UTF-8, antes de hash/comparación bcrypt. Por ejemplo, 36 caracteres `é` ocupan 72 bytes y son válidos; 37 ocupan 74 bytes y se rechazan.
+
 ## Contratos HTTP
 
 Propietario requiere JWT, cuenta Activa/Verificado y titularidad. Administración añade rol Administrador vigente. No existe alta pública de administradores.
@@ -109,7 +111,9 @@ Propietario requiere JWT, cuenta Activa/Verificado y titularidad. Administració
 | `GET /api/admin/publications/reviews` | Cola pendiente paginada; lectura de cada referencia de procedencia auditada. |
 | `POST /api/admin/publications/:id/review` | `decision, reason, submittedAt`; decisión ligada al envío actual. |
 
-Colas: `limit` 1–100 (20 por defecto), `offset` 0–100000. Perfil deriva condición académica del rol, universidad fija UCSM; métricas protegidas no prueban reputación completa. Evidencia de rol permite cuatro textos planos acotados: `documentType, institution, academicPeriod, note`. La referencia HTTPS es opaca: no se carga un binario ni se controla privacidad del destino remoto. La API restringe evidencia a titular/administrador y audita acceso administrativo. Referencia inválida o metadatos ajenos se rechazan; segunda solicitud pendiente: 409 `ROLE_REQUEST_PENDING`. Misma decisión de rol devuelve resultado existente, opuesta: 409. Decisiones nuevas escriben auditoría/outbox sin evidencia ni motivo libre en esos registros.
+Colas: `limit` 1–100 (20 por defecto), `offset` 0–100000. Perfil deriva condición académica del rol, universidad fija UCSM; métricas protegidas no prueban reputación completa. Evidencia de rol permite cuatro textos planos acotados: `documentType, institution, academicPeriod, note`; esa allowlist no detecta secretos dentro de sus valores de texto libre. La referencia HTTPS es opaca: no se carga un binario ni se controla privacidad del destino remoto. El titular conserva acceso a su propia evidencia. Para administradores, únicamente las colas devuelven referencias de evidencia y auditan cada lectura antes de responder. Las respuestas de decisión, iniciales y repetidas, nunca incluyen `evidence_ref`, `evidence_metadata` ni `provenance_evidence_ref`. Referencia inválida o metadatos ajenos se rechazan; segunda solicitud pendiente: 409 `ROLE_REQUEST_PENDING`. Misma decisión de rol devuelve resultado existente, aunque cambien administrador o motivo; opuesta: 409. Decisiones nuevas escriben auditoría/outbox sin evidencia ni motivo libre en esos registros; reintentos del mismo resultado no duplican efectos.
+
+La sintaxis de autoridad de las URL de evidencia es intencionalmente conservadora: `https://`, etiquetas ASCII alfanuméricas con guiones internos separadas por puntos, sin credenciales, y puerto opcional de 1 a 65535. Rechaza IPv6 entre corchetes (por ejemplo, `https://[::1]/evidence`), aunque sea una URL HTTPS válida para otros consumidores; no acepta todas las formas permitidas por el estándar de URL.
 
 Mutaciones de publicación aceptan `title, description, category, condition, modality, price, guarantee_amount, available_from, available_until, provenance_evidence_ref, images`. Acciones de ciclo reciben cuerpo vacío. Envío exige textos completos, modalidad explícita y 1–4 imágenes HTTPS ordenadas, primera principal. Centinelas de borrador como `draft-modality-unset` no se muestran públicamente. Venta: precio positivo, garantía cero, sin fechas. Alquiler: precio positivo y fechas. Préstamo: precio cero y fechas. Garantía no negativa, PEN con máximo dos decimales, sin redondear. ISO con zona o `YYYY-MM-DD` a medianoche de Perú; inicio menor que fin.
 
@@ -154,15 +158,17 @@ Resultados frescos de Fase 2, 2026-09-30:
 
 | Comando | Resultado |
 |---|---|
-| `npm test --prefix server` | 216 pruebas aprobadas, 162 omitidas; 11 archivos aprobados, 8 omitidos (378 pruebas / 19 archivos). |
-| `powershell -ExecutionPolicy Bypass -File tools/test-postgres.ps1` | 378 pruebas aprobadas en 19 archivos, sin omitidas. |
+| `npm test --prefix server` | 233 pruebas aprobadas, 170 omitidas; 13 archivos aprobados, 8 omitidos (403 pruebas / 21 archivos). |
+| `powershell -ExecutionPolicy Bypass -File tools/test-postgres.ps1` | 403 pruebas aprobadas en 21 archivos, sin omitidas. |
 | `npm test --prefix client` | 53 pruebas aprobadas en 9 archivos. |
 | `npm run lint --prefix client` | Salida 0. |
-| `npm run build --prefix client` | Salida 0; frontend y service worker generados; aviso informativo de tiempo de callbacks PWA. |
+| `npm run build --prefix client` | Salida 0; frontend y service worker generados, sin advertencias. |
 | Validación BPMN | Ambos archivos válidos: 4 procesos y 1 diagrama cada uno, sin advertencias del validador. |
 | Render BPMN | Ambos SVG generados y analizados como XML; vistas PNG derivadas inspeccionadas. |
 | `git diff --check` | Sin errores. |
 
+En una ejecución intermedia se observó un fallo intermitente previo en `outbox.integration.test.js`, `does not count a stale handler as successfully persisted` (contador failed 1 en lugar de 0). La ejecución completa final pasó. Las suites de outbox/identidad/rol comparten la base desechable y outbox trunca/reclama eventos sin aislar productores de otras suites; queda pendiente aislarlas para eliminar esa interferencia potencial.
+
 No hay proveedor institucional real, carga binaria de evidencia ni almacén privado de objetos. Por confirmar: alta operativa de administradores, gobierno de términos/proveedores, retención de evidencia y despliegue del worker.
 
-Fases posteriores pendientes: aceptación/cancelación, economía, entrega/cierre completos, reputación, incidencias, moderación general, ARCO y notificaciones completas. Pago/entrega del cliente muestran indisponibilidad; no dinero real. API heredada exige publicación activa para operar y `Lista para entrega` para consumir OTP; no existe ruta pública que salte aceptación/economía, y seguridad completa del OTP de entrega sigue pendiente. No se afirma cumplimiento RNF, piloto con usuarios, SUS, disponibilidad, recuperación ni instalación PWA.
+Fases posteriores pendientes: aceptación/cancelación, economía, entrega/cierre completos, reputación, incidencias, moderación general, ARCO y notificaciones completas. Pago/entrega del cliente muestran indisponibilidad; no dinero real. La ruta heredada autenticada `POST /api/operations` exige publicación Activa pero crea directamente `Pendiente de pago/garantía`, con snapshot contractual, reserva para alquiler/préstamo y OTP; todavía omite el paso de aceptación previsto para Fase 3. Confirmar entrega exige `Lista para entrega`; la seguridad completa del OTP sigue pendiente. Esta frontera heredada no se modifica en Fase 2. No se afirma cumplimiento RNF, piloto con usuarios, SUS, disponibilidad, recuperación ni instalación PWA.

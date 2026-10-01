@@ -313,7 +313,7 @@
     <bpmn:sequenceFlow id="RoleRequest_Flow_result_error" sourceRef="RoleRequest_result" targetRef="RoleRequest_error" name="Otro fallo"><bpmn:documentation>Confirmada. Condición: Otro fallo. Evidencia: server/src/modules/users/role-review.service.js::transaction; server/src/modules/users/role-review.service.js::requestStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
   </bpmn:process>
   <bpmn:process id="Process_RoleReview" name="Consulta y decisión de rol (peticiones independientes)" isExecutable="false">
-    <bpmn:documentation>GET y POST se autentican por separado. Rechazo académico es decisión exitosa rejected, distinta de rechazo HTTP. Auditoría de cola y decisión son transacciones distintas. Evidencia: server/src/modules/users/role-review.service.js; server/test/profile-and-role-review.integration.test.js. Por confirmar: gobierno operativo de términos/proveedores, alta administrativa, retención de evidencia y despliegue de outbox.</bpmn:documentation>
+    <bpmn:documentation>GET y POST se autentican por separado. Solo la cola administrativa revela evidencia y audita cada lectura antes de responder; el titular conserva acceso propio. Respuestas de decisión inicial y repetida usan publicDecision y nunca incluyen evidence_ref ni evidence_metadata. Rechazo académico es decisión exitosa rejected, distinta de rechazo HTTP. Auditoría de cola y decisión son transacciones distintas. Evidencia: server/src/modules/users/role-review.service.js; server/test/profile-and-role-review.integration.test.js; server/test/decision-privacy.test.js. Por confirmar: gobierno operativo de términos/proveedores, alta administrativa, retención de evidencia y despliegue de outbox.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_RoleReview">
       <bpmn:lane id="Lane_RoleReview_Actor" name="Administrador"><bpmn:documentation>Responsabilidad confirmada: server/src/modules/users/role-review.service.js; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation><bpmn:flowNodeRef>RoleReview_start</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_action</bpmn:flowNodeRef></bpmn:lane>
       <bpmn:lane id="Lane_RoleReview_System" name="Sistema"><bpmn:documentation>Responsabilidad confirmada: server/src/modules/users/role-review.service.js; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation><bpmn:flowNodeRef>RoleReview_auth</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_denied</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_kind</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_queue</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_queueResult</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_queueEnd</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_queueError</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_locked</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_status</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_same</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_conflict</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_owner</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_forbidden</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_decision</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_approve</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_reject</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_effects</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_committed</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_success</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_error</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_outcome</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_rejection</bpmn:flowNodeRef></bpmn:lane>
@@ -375,7 +375,7 @@
       <bpmn:outgoing>RoleReview_Flow_status_owner</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:endEvent id="RoleReview_same" name="Éxito: misma decisión, sin nuevos efectos">
-      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. Mismo outcome basta, aun si motivo/admin difieren; no se reescribe resultado.</bpmn:documentation>
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/src/modules/users/role-review.service.js::publicDecision. Prueba: server/test/profile-and-role-review.integration.test.js. Mismo outcome basta, aun si motivo/admin difieren; no se reescribe resultado ni se devuelve evidencia.</bpmn:documentation>
       <bpmn:incoming>RoleReview_Flow_status_same</bpmn:incoming>
     </bpmn:endEvent>
     <bpmn:endEvent id="RoleReview_conflict" name="Rechazo 409: decisión conflictiva">
@@ -421,7 +421,7 @@
       <bpmn:outgoing>RoleReview_Flow_committed_error</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:endEvent id="RoleReview_success" name="Éxito: aprobado; rol Estudiante">
-      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/src/modules/users/role-review.service.js::publicDecision. Prueba: server/test/profile-and-role-review.integration.test.js. Respuesta sin evidence_ref ni evidence_metadata.</bpmn:documentation>
       <bpmn:incoming>RoleReview_Flow_outcome_success</bpmn:incoming>
     </bpmn:endEvent>
     <bpmn:endEvent id="RoleReview_error" name="Error 500: rollback rol/decisión/efectos">
@@ -439,7 +439,7 @@
       <bpmn:outgoing>RoleReview_Flow_outcome_rejection</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:endEvent id="RoleReview_rejection" name="Decisión rechazada; conserva Egresado">
-      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/src/modules/users/role-review.service.js::publicDecision. Prueba: server/test/profile-and-role-review.integration.test.js. Respuesta sin evidence_ref ni evidence_metadata.</bpmn:documentation>
       <bpmn:incoming>RoleReview_Flow_outcome_rejection</bpmn:incoming>
     </bpmn:endEvent>
     <bpmn:sequenceFlow id="RoleReview_Flow_start_action" sourceRef="RoleReview_start" targetRef="RoleReview_action"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>

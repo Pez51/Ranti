@@ -92,6 +92,18 @@ describe.skipIf(!enabled)('verified institutional registration with disposable P
     expect(JSON.stringify(response.body)).not.toMatch(/password|hash/);
   });
 
+  it.each(['a'.repeat(72), 'é'.repeat(36)])('uses the same 72-byte password boundary for registration and login: %s', async password => {
+    const data = input({ password }); const registered = await registerPendingAccount(db, provider, data);
+    await confirm(registered);
+    expect((await request(app).post('/api/auth/login').send({ email: data.email, password })).status).toBe(200);
+    for (const invalidPassword of [password + 'a', password + 'é', 'é'.repeat(40)]) {
+      const rejected = await request(app).post('/api/auth/login').send({ email: data.email, password: invalidPassword });
+      expect.soft(rejected.status).toBe(400); expect.soft(rejected.body).not.toHaveProperty('token');
+      await expect(registerPendingAccount(db, provider, input({ password: invalidPassword })))
+        .rejects.toMatchObject({ status: 400, code: 'IDENTITY_INVALID_INPUT' });
+    }
+  });
+
   it('rejects duplicate/concurrent normalized registration without replacing the original password or consent', async () => {
     const data = input();
     const results = await Promise.allSettled([registerPendingAccount(db, provider, data),

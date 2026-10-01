@@ -103,6 +103,32 @@ describe.skipIf(!enabled)('profile and role review on disposable PostgreSQL', ()
     expect((await request(app).get('/api/users/me').set(auth(randomUUID()))).status).toBe(401);
   });
 
+  it.each(['approve', 'reject'])('keeps %s HTTP decisions private for initial, same-admin and other-admin retries', async decision => {
+    const owner = await user(); const first = await user('Administrador'); const second = await user('Administrador');
+    const pending = await requestStudentRole(db, { userId: owner.id, evidence_ref, evidence_metadata: { note: 'private-marker' } });
+    const access = async () => (await db.query("SELECT * FROM audit_logs WHERE entity_id=$1 AND action='identity.role-request.evidence-read'", [pending.id])).rows;
+    for (const reviewer of [first, first, second]) {
+      const queue = await request(app).get('/api/admin/role-requests?limit=100').set(auth(reviewer.id));
+      expect(queue.status).toBe(200);
+      expect(queue.body.items.find(item => item.id === pending.id)).toMatchObject({ evidence_ref, evidence_metadata: { note: 'private-marker' } });
+    }
+    const reads = await access();
+    expect(reads.map(item => item.actor_id).sort()).toEqual([first.id, first.id, second.id].sort());
+    expect(JSON.stringify(reads)).not.toMatch(/opaque-key|private-marker/);
+    for (const reviewer of [first, first, second]) {
+      const response = await request(app).post(`/api/admin/role-requests/${pending.id}/decision`).set(auth(reviewer.id))
+        .send({ decision, reason: 'Reviewed' });
+      expect(response.status).toBe(200);
+      expect.soft(response.body).not.toHaveProperty('evidence_ref');
+      expect.soft(response.body).not.toHaveProperty('evidence_metadata');
+      expect.soft(JSON.stringify(response.body)).not.toMatch(/opaque-key|private-marker/);
+    }
+    expect(await access()).toHaveLength(3);
+    const recorded = await effects(pending.id);
+    expect(recorded.audit).toHaveLength(1); expect(recorded.outbox).toHaveLength(1);
+    expect(JSON.stringify(recorded)).not.toMatch(/opaque-key|private-marker/);
+  });
+
   it('rejects forged actor and request IDs in HTTP bodies without changing another account', async () => {
     const owner = await user(); const victim = await user(); const admin = await user('Administrador');
     const forged = await request(app).post('/api/users/me/role-requests').set(auth(owner.id))

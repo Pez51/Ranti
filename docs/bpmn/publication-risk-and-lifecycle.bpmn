@@ -354,7 +354,7 @@
     <bpmn:sequenceFlow id="Lifecycle_Flow_commit_error" sourceRef="Lifecycle_commit" targetRef="Lifecycle_error" name="Fallo audit/outbox/SQL"><bpmn:documentation>Confirmada. Condición: Fallo audit/outbox/SQL. Evidencia: server/src/modules/publications/publication.service.js::transaction; server/test/publication-lifecycle.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
   </bpmn:process>
   <bpmn:process id="Process_PublicationReview" name="Cola y decisión administrativa de publicación" isExecutable="false">
-    <bpmn:documentation>GET y POST separados: cada uno autentica y confirma su propia transacción. Rechazo de contenido devuelve Borrador como resultado exitoso de la decisión. Evidencia: server/src/modules/publications/publication.service.js; server/test/publication-lifecycle.integration.test.js. Por confirmar: gobierno operativo de términos/proveedores, alta administrativa, retención de evidencia y despliegue de outbox.</bpmn:documentation>
+    <bpmn:documentation>GET y POST separados: cada uno autentica y confirma su propia transacción. Solo la cola administrativa revela evidencia y audita cada lectura antes de responder; el titular conserva acceso propio. Respuestas de decisión inicial y repetida usan publicReviewDecision y nunca incluyen provenance_evidence_ref ni otros campos privados de evidencia. Rechazo de contenido devuelve Borrador como resultado exitoso de la decisión. Evidencia: server/src/modules/publications/publication.service.js; server/test/publication-lifecycle.integration.test.js; server/test/decision-privacy.test.js. Por confirmar: gobierno operativo de términos/proveedores, alta administrativa, retención de evidencia y despliegue de outbox.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_PublicationReview">
       <bpmn:lane id="Lane_PublicationReview_Actor" name="Administrador"><bpmn:documentation>Responsabilidad confirmada: server/src/modules/publications/publication.service.js; server/test/publication-lifecycle.integration.test.js.</bpmn:documentation><bpmn:flowNodeRef>PublicationReview_start</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_input</bpmn:flowNodeRef></bpmn:lane>
       <bpmn:lane id="Lane_PublicationReview_System" name="Sistema"><bpmn:documentation>Responsabilidad confirmada: server/src/modules/publications/publication.service.js; server/test/publication-lifecycle.integration.test.js.</bpmn:documentation><bpmn:flowNodeRef>PublicationReview_auth</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_denied</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_kind</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_queue</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_queueOk</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_queueEnd</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_queueError</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_lock</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_stamp</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_stale</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_status</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_same</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_conflict</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_unblocked</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_decision</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_approve</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_valid</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_invalid</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_reject</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_effects</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_commit</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_success</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_error</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_outcome</bpmn:flowNodeRef><bpmn:flowNodeRef>PublicationReview_rejection</bpmn:flowNodeRef></bpmn:lane>
@@ -384,7 +384,7 @@
       <bpmn:outgoing>PublicationReview_Flow_kind_queue</bpmn:outgoing>
       <bpmn:outgoing>PublicationReview_Flow_kind_lock</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:serviceTask id="PublicationReview_queue" name="Leer pending; auditar referencias; COMMIT">
+    <bpmn:serviceTask id="PublicationReview_queue" name="Leer Pendiente de revisión; auditar referencias; COMMIT">
       <bpmn:documentation>Confirmada. Evidencia: server/src/modules/publications/publication.service.js::listPendingPublicationReviews. Prueba: server/test/publication-lifecycle.integration.test.js. publication.evidence.viewed por fila con referencia; solo auditoría, sin evento outbox de lectura.</bpmn:documentation>
       <bpmn:incoming>PublicationReview_Flow_kind_queue</bpmn:incoming>
       <bpmn:outgoing>PublicationReview_Flow_queue_queueOk</bpmn:outgoing>
@@ -426,7 +426,7 @@
       <bpmn:outgoing>PublicationReview_Flow_status_unblocked</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:endEvent id="PublicationReview_same" name="Éxito: repetición sin efectos">
-      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/publications/publication.service.js::decidePublicationReview. Prueba: server/test/publication-lifecycle.integration.test.js. Requiere mismo outcome, admin, motivo normalizado y submittedAt.</bpmn:documentation>
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/publications/publication.service.js::decidePublicationReview; server/src/modules/publications/publication.service.js::publicReviewDecision. Prueba: server/test/publication-lifecycle.integration.test.js. Requiere mismo outcome, admin, motivo normalizado y submittedAt. Otro administrador recibe 409. Respuesta sin evidencia; no duplica efectos.</bpmn:documentation>
       <bpmn:incoming>PublicationReview_Flow_status_same</bpmn:incoming>
     </bpmn:endEvent>
     <bpmn:endEvent id="PublicationReview_conflict" name="Rechazo 409: decisión / operación conflictiva">
@@ -479,7 +479,7 @@
       <bpmn:outgoing>PublicationReview_Flow_commit_error</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:endEvent id="PublicationReview_success" name="Éxito: aprobación Activa">
-      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/publications/publication.service.js::decidePublicationReview. Prueba: server/test/publication-lifecycle.integration.test.js. </bpmn:documentation>
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/publications/publication.service.js::decidePublicationReview; server/src/modules/publications/publication.service.js::publicReviewDecision. Prueba: server/test/publication-lifecycle.integration.test.js. Respuesta sin provenance_evidence_ref ni otros campos privados de evidencia.</bpmn:documentation>
       <bpmn:incoming>PublicationReview_Flow_outcome_success</bpmn:incoming>
     </bpmn:endEvent>
     <bpmn:endEvent id="PublicationReview_error" name="Error 500: rollback decisión/efectos">
@@ -497,7 +497,7 @@
       <bpmn:outgoing>PublicationReview_Flow_outcome_rejection</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:endEvent id="PublicationReview_rejection" name="Rechazada: Borrador para corrección">
-      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/publications/publication.service.js::decidePublicationReview. Prueba: server/test/publication-lifecycle.integration.test.js. </bpmn:documentation>
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/publications/publication.service.js::decidePublicationReview; server/src/modules/publications/publication.service.js::publicReviewDecision. Prueba: server/test/publication-lifecycle.integration.test.js. Respuesta sin provenance_evidence_ref ni otros campos privados de evidencia.</bpmn:documentation>
       <bpmn:incoming>PublicationReview_Flow_outcome_rejection</bpmn:incoming>
     </bpmn:endEvent>
     <bpmn:sequenceFlow id="PublicationReview_Flow_start_input" sourceRef="PublicationReview_start" targetRef="PublicationReview_input"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/publications/publication.service.js::listPendingPublicationReviews; server/src/modules/publications/publication.service.js::decidePublicationReview; server/test/publication-lifecycle.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>

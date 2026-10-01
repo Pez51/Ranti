@@ -4,13 +4,14 @@ import { z } from 'zod';
 import pool from '../config/database.js';
 import { env } from '../config/env.js';
 import { isUcsmInstitutionalEmail } from '../modules/identity/identity-provider.js';
+import { passwordInput } from '../modules/identity/password-input.js';
 import { SimulatedIdentityProvider } from '../modules/identity/simulated-identity-provider.js';
 import { IdentityError, registerPendingAccount, resendVerification, verifyPendingAccount } from '../modules/identity/identity.service.js';
 
 const provider = new SimulatedIdentityProvider();
 const loginInput = z.object({
   email: z.string().trim().toLowerCase().refine(isUcsmInstitutionalEmail),
-  password: z.string().min(1).max(72),
+  password: passwordInput,
 });
 const signToken = user => jwt.sign({ id: user.id, role: user.role }, env.JWT_SECRET, { expiresIn: '24h' });
 // Equal-cost password comparison for an absent account, without logging credentials.

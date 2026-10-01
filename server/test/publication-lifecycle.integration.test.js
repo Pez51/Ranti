@@ -142,6 +142,30 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
       expect((await review(resubmitted)).status).toBe('Activa');
     }
   });
+  it.each(['approve', 'reject'])('keeps %s HTTP review responses private and preserves queue audit and retry semantics', async decision => {
+    const pub = await create({ price: 1000, provenance_evidence_ref: evidence }); const pending = await submit(pub.id);
+    const second = await user('Administrador');
+    const access = async () => (await db.query("SELECT * FROM audit_logs WHERE entity_id=$1 AND action='publication.evidence.viewed'", [pub.id])).rows;
+    for (const reviewer of [admin, admin, second]) {
+      const queue = await request(app).get('/api/admin/publications/reviews?limit=100').set(auth(reviewer));
+      expect(queue.status).toBe(200);
+      expect(queue.body.items.find(item => item.id === pub.id).provenance_evidence_ref).toBe(evidence);
+    }
+    expect((await access()).map(item => item.actor_id).sort()).toEqual([admin, admin, second].sort());
+    const before = await effects(pub.id);
+    for (const reviewer of [admin, admin, second]) {
+      const response = await request(app).post(`/api/admin/publications/${pub.id}/review`).set(auth(reviewer))
+        .send({ decision, reason: 'Reviewed', submittedAt: pending.submitted_at });
+      expect(response.status).toBe(reviewer === admin ? 200 : 409);
+      expect.soft(response.body).not.toHaveProperty('provenance_evidence_ref');
+      expect.soft(JSON.stringify(response.body)).not.toContain(evidence);
+    }
+    const recorded = await effects(pub.id);
+    expect(recorded.audit).toHaveLength(before.audit.length + 1);
+    expect(recorded.outbox).toHaveLength(before.outbox.length + 1);
+    expect(await access()).toHaveLength(3);
+    expect(JSON.stringify(recorded)).not.toContain(evidence);
+  });
   it('revalidates approval evidence and requires reason, then recalculates active edits and paused reactivation', async () => {
     const pub = await create(); await submit(pub.id);
     const pending = await service.updatePublication(db, owner, pub.id, { price: '1000', provenance_evidence_ref: evidence });
@@ -180,6 +204,32 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
     return (await db.query(`INSERT INTO operations (publication_id,demandante_id,oferente_id,modality,status,contract_snapshot)
       VALUES ($1,$2,$3,'Venta',$4,'{}') RETURNING id`, [pub.id, other, owner, status])).rows[0].id;
   }
+  async function waitingForOperationLock(pid) {
+    return (await db.query(`SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
+      AND pid=$1 AND wait_event_type='Lock' AND query LIKE '%operations%FOR UPDATE%'`, [pid])).rowCount > 0;
+  }
+  it.each(['another database', 'another backend'])('ignores an unrelated operations lock wait in %s', async location => {
+    const source = location === 'another database' ? cluster : db;
+    const blocker = await source.connect(); const unrelated = await source.connect(); const participant = await db.connect();
+    const key = parseInt(randomUUID().slice(0, 8), 16);
+    let blocked;
+    try {
+      await blocker.query('SELECT pg_advisory_lock($1)', [key]);
+      blocked = unrelated.query('SELECT pg_advisory_lock($1) /* operations FOR UPDATE */', [key]);
+      let waiting = false;
+      for (let i = 0; i < 100 && !waiting; i++) {
+        waiting = (await source.query("SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND pid=$1 AND wait_event_type='Lock'", [unrelated.processID])).rowCount > 0;
+        if (!waiting) await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(waiting).toBe(true);
+      expect(await waitingForOperationLock(participant.processID)).toBe(false);
+    } finally {
+      await blocker.query('SELECT pg_advisory_unlock($1)', [key]);
+      if (blocked) await blocked;
+      await unrelated.query('SELECT pg_advisory_unlock($1)', [key]);
+      blocker.release(); unrelated.release(); participant.release();
+    }
+  });
   it.each(['Aceptada', 'Pendiente de pago/garantía', 'Lista para entrega', 'Entregada/Activa', 'En cierre',
     'Pendiente de resolución económica', 'En incidencia'])('blocks contractual edits and lifecycle with operation %s', async status => {
     const pub = await create(); await submit(pub.id); await operation(pub, status);
@@ -195,17 +245,19 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
     const pub = await create(); await submit(pub.id); const op = await operation(pub);
     const blocker = await db.connect(); await blocker.query('BEGIN');
     await blocker.query("UPDATE operations SET status='Aceptada' WHERE id=$1", [op]);
-    const paused = service.pausePublication(db, owner, pub.id).then(value => ({ value }), error => ({ error }));
+    const participant = await db.connect();
+    const participantDb = { connect: async () => ({ query: participant.query.bind(participant), release() {} }) };
+    const paused = service.pausePublication(participantDb, owner, pub.id).then(value => ({ value }), error => ({ error }));
     try {
       // Observe an actual lock wait, not timing-dependent sleeps.
       let waiting = false;
       for (let i = 0; i < 100 && !waiting; i++) {
-        waiting = (await db.query("SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%operations%FOR UPDATE%'")).rowCount > 0;
+        waiting = await waitingForOperationLock(participant.processID);
         if (!waiting) await new Promise(resolve => setTimeout(resolve, 10));
       }
       expect(waiting).toBe(true); await blocker.query('COMMIT');
       expect((await paused).error).toMatchObject({ status: 409 }); expect((await row(pub.id)).status).toBe('Activa');
-    } finally { await blocker.query('ROLLBACK'); blocker.release(); await paused; }
+    } finally { await blocker.query('ROLLBACK'); blocker.release(); await paused; participant.release(); }
   });
   it('rechecks a pause committed while an operation request is waiting on the publication', async () => {
     const pub = await create(); await submit(pub.id);

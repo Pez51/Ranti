@@ -136,47 +136,23 @@ describe('detalle público de publicaciones', () => {
   });
 });
 
-describe('transacciones de reserva rechazadas', () => {
-  it('revierte antes de liberar la conexión si el solicitante es el dueño', async () => {
-    const events = [];
-    const client = {
-      query: vi.fn(async (sql) => {
-        events.push(sql);
-        if (sql.includes('FOR UPDATE')) return { rows: [{ owner_id: 'user-1' }] };
-        return { rows: [] };
-      }),
-      release: vi.fn(() => events.push('RELEASE')),
-    };
-    db.connect.mockResolvedValue(client);
+describe('solicitudes rechazadas', () => {
+  it('rechaza términos incompletos antes de abrir una transacción', async () => {
     const res = response();
-
-    await createOperation({ user: { id: 'user-1' }, body: { publication_id: '00000000-0000-4000-8000-000000000001' } }, res);
-
+    await createOperation({ user: { id: '11111111-1111-4111-8111-111111111111' },
+      body: { publication_id: '00000000-0000-4000-8000-000000000001' } }, res);
     expect(res.statusCode).toBe(400);
-    expect(events).toEqual(['BEGIN', 'SELECT * FROM publications WHERE id = $1 FOR UPDATE', 'ROLLBACK', 'RELEASE']);
+    expect(db.query).not.toHaveBeenCalled();
+    expect(db.connect).not.toHaveBeenCalled();
   });
 
-  it('revierte antes de liberar la conexión si las fechas se solapan', async () => {
-    const events = [];
-    const client = {
-      query: vi.fn(async (sql) => {
-        events.push(sql);
-        if (sql.includes('FOR UPDATE')) return { rows: [{ owner_id: 'owner-1', modality: 'Alquiler', status: 'Activa' }] };
-        if (sql.includes('FROM reservations')) return { rows: [{ id: 'res-1' }] };
-        return { rows: [] };
-      }),
-      release: vi.fn(() => events.push('RELEASE')),
-    };
-    db.connect.mockResolvedValue(client);
+  it('oculta una publicación inexistente sin abrir una transacción', async () => {
+    db.query.mockResolvedValue({ rows: [] });
     const res = response();
-
-    await createOperation({
-      user: { id: 'user-1' },
-      body: { publication_id: '00000000-0000-4000-8000-000000000001', start_date: '2026-10-01', end_date: '2026-10-03' },
-    }, res);
-
-    expect(res.statusCode).toBe(409);
-    expect(events.at(-2)).toBe('ROLLBACK');
-    expect(events.at(-1)).toBe('RELEASE');
+    await createOperation({ user: { id: '11111111-1111-4111-8111-111111111111' },
+      body: { publication_id: '00000000-0000-4000-8000-000000000001',
+        requested_price: '25.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 } }, res);
+    expect(res.statusCode).toBe(404);
+    expect(db.connect).not.toHaveBeenCalled();
   });
 });

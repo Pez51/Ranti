@@ -29,9 +29,13 @@ describe.skipIf(!enabled)('API con PostgreSQL temporal real', () => {
 
   async function publication(status = 'Activa', modality = 'Alquiler') {
     const { rows } = await pool.query(
-      `INSERT INTO publications (owner_id, title, description, category, condition, modality, price, guarantee_amount, status)
-       VALUES ($1, 'Calculadora', 'Equipo de prueba', 'Sistemas', 'Usado', $2, 10, 20, $3) RETURNING id`,
-      [owner, modality, status],
+      `INSERT INTO publications (owner_id, title, description, category, condition, modality, price, guarantee_amount,
+        available_from, available_until, status)
+       VALUES ($1, 'Calculadora', 'Equipo de prueba', 'Sistemas', 'Usado', $2, 10,
+         $3, $4, $5, $6) RETURNING id`,
+      [owner, modality, modality === 'Venta' ? 0 : 20,
+        modality === 'Venta' ? null : '2026-12-01T00:00:00Z',
+        modality === 'Venta' ? null : '2027-01-01T00:00:00Z', status],
     );
     return rows[0].id;
   }
@@ -206,33 +210,36 @@ describe.skipIf(!enabled)('API con PostgreSQL temporal real', () => {
     }
   });
 
-  it('solo crea una reserva cuando dos solicitudes compiten por las mismas fechas', async () => {
+  it('permite solicitudes pendientes compatibles sin crear reserva ni OTP', async () => {
     const pub = await publication();
     const responses = await Promise.all([1, 2].map(() => request(app).post('/api/operations').set(auth(buyer)).send({
-      publication_id: pub, start_date: '2026-10-01T10:00:00Z', end_date: '2026-10-02T10:00:00Z',
+      publication_id: pub, requested_price: '10.00', requested_guarantee_amount: '20.00', requested_contract_version: 1,
+      start_date: '2026-12-01T10:00:00Z', end_date: '2026-12-02T10:00:00Z',
     })));
-    expect(responses.map((r) => r.status).sort()).toEqual([201, 409]);
-    expect(responses.find((r) => r.status === 201).body).not.toHaveProperty('otp_code');
+    expect(responses.map((r) => r.status)).toEqual([201, 201]);
+    for (const response of responses) expect(response.body.operation).toMatchObject({ status: 'Pendiente', contract_snapshot: null });
     const { rows } = await pool.query('SELECT id FROM reservations WHERE publication_id = $1', [pub]);
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(0);
+    expect((await pool.query('SELECT otp_code,contract_snapshot FROM operations WHERE publication_id=$1', [pub])).rows)
+      .toEqual([{ otp_code: null, contract_snapshot: null }, { otp_code: null, contract_snapshot: null }]);
   });
 
-  it('devuelve 409 al segundo intento de compra de una venta reservada', async () => {
+  it('permite dos solicitudes pendientes de venta sin reserva', async () => {
     const pub = await publication('Activa', 'Venta');
-    const first = await request(app).post('/api/operations').set(auth(buyer)).send({ publication_id: pub });
+    const terms = { publication_id: pub, requested_price: '10.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 };
+    const first = await request(app).post('/api/operations').set(auth(buyer)).send(terms);
     expect(first.status).toBe(201);
-    const second = await request(app).post('/api/operations').set(auth(buyer)).send({ publication_id: pub });
-    expect(second.status).toBe(409);
-    expect(second.body.error).toEqual(expect.any(String));
-    expect(JSON.stringify(second.body)).not.toMatch(/reservations_one_live_sale|duplicate key/i);
-    expect((await pool.query('SELECT id FROM operations WHERE publication_id=$1', [pub])).rows).toHaveLength(1);
-    expect((await pool.query('SELECT id FROM reservations WHERE publication_id=$1', [pub])).rows).toHaveLength(1);
+    const second = await request(app).post('/api/operations').set(auth(buyer)).send(terms);
+    expect(second.status).toBe(201);
+    expect((await pool.query('SELECT id FROM operations WHERE publication_id=$1', [pub])).rows).toHaveLength(2);
+    expect((await pool.query('SELECT id FROM reservations WHERE publication_id=$1', [pub])).rows).toHaveLength(0);
   });
 
   it.each(['Pausada', 'Borrador', 'Retirada'])('no reserva una publicación %s', async (status) => {
     const pub = await publication(status);
     const res = await request(app).post('/api/operations').set(auth(buyer)).send({
-      publication_id: pub, start_date: '2026-10-01', end_date: '2026-10-03',
+      publication_id: pub, requested_price: '10.00', requested_guarantee_amount: '20.00', requested_contract_version: 1,
+      start_date: '2026-12-02', end_date: '2026-12-03',
     });
     expect(res.status).toBe(409);
     expect((await pool.query('SELECT id FROM operations WHERE publication_id = $1', [pub])).rows).toHaveLength(0);
@@ -247,8 +254,9 @@ describe.skipIf(!enabled)('API con PostgreSQL temporal real', () => {
     { start_date: 'invalid', end_date: '2026-10-01' },
   ])('rechaza un intervalo de alquiler inválido: %j', async (dates) => {
     const pub = await publication();
-    const res = await request(app).post('/api/operations').set(auth(buyer)).send({ publication_id: pub, ...dates });
-    expect(res.status).toBe(400);
+    const res = await request(app).post('/api/operations').set(auth(buyer)).send({ publication_id: pub,
+      requested_price: '10.00', requested_guarantee_amount: '20.00', requested_contract_version: 1, ...dates });
+    expect([400, 422]).toContain(res.status);
     expect((await pool.query('SELECT id FROM operations WHERE publication_id = $1', [pub])).rows).toHaveLength(0);
   });
 
@@ -261,14 +269,17 @@ describe.skipIf(!enabled)('API con PostgreSQL temporal real', () => {
   it('rechaza fechas de reserva en una venta', async () => {
     const pub = await publication('Activa', 'Venta');
     const res = await request(app).post('/api/operations').set(auth(buyer)).send({
-      publication_id: pub, start_date: '2026-10-01', end_date: '2026-10-03',
+      publication_id: pub, requested_price: '10.00', requested_guarantee_amount: '0.00', requested_contract_version: 1,
+      start_date: '2026-12-02', end_date: '2026-12-03',
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   it('no deja conexiones con transacciones abiertas después de los rechazos', async () => {
     const pub = await publication();
-    expect((await request(app).post('/api/operations').set(auth(owner)).send({ publication_id: pub })).status).toBe(400);
+    expect((await request(app).post('/api/operations').set(auth(owner)).send({ publication_id: pub,
+      requested_price: '10.00', requested_guarantee_amount: '20.00', requested_contract_version: 1,
+      start_date: '2026-12-02', end_date: '2026-12-03' })).status).toBe(400);
     const { rows } = await pool.query(
       `SELECT pid FROM pg_stat_activity WHERE datname = current_database()
        AND pid <> pg_backend_pid() AND state = 'idle in transaction'`,

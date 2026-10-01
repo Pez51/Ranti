@@ -62,7 +62,8 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
     expect((await request(app).get(`/api/publications/${pub.id}`)).status).toBe(200);
     await Promise.all([1, 2].map(() => service.pausePublication(db, owner, pub.id)));
     expect((await request(app).get(`/api/publications/${pub.id}`)).status).toBe(404);
-    expect((await request(app).post('/api/operations').set(auth(other)).send({ publication_id: pub.id })).status).toBe(409);
+    expect((await request(app).post('/api/operations').set(auth(other)).send({ publication_id: pub.id,
+      requested_price: '25.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 })).status).toBe(409);
     expect((await service.reactivatePublication(db, owner, pub.id)).status).toBe('Activa');
     await service.withdrawPublication(db, owner, pub.id);
     const terminal = await effects(pub.id); await service.withdrawPublication(db, owner, pub.id);
@@ -286,11 +287,12 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
         if (!waiting) await new Promise(resolve => setTimeout(resolve, 10));
       }
       expect(waiting).toBe(true);
-      reserve = request(app).post('/api/operations').set(auth(other)).send({ publication_id: pub.id }).then(result => result);
+      reserve = request(app).post('/api/operations').set(auth(other)).send({ publication_id: pub.id,
+        requested_price: '25.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 }).then(result => result);
       let reserveWaiting = false;
       for (let i = 0; i < 100 && !reserveWaiting; i++) {
         reserveWaiting = (await db.query(`SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
-          AND wait_event_type='Lock' AND query = 'SELECT * FROM publications WHERE id = $1 FOR UPDATE'`)).rowCount > 0;
+          AND wait_event_type='Lock' AND query LIKE '%FROM users WHERE id=$1 FOR NO KEY UPDATE%'`)).rowCount > 0;
         if (!reserveWaiting) await new Promise(resolve => setTimeout(resolve, 10));
       }
       expect(reserveWaiting).toBe(true); await blocker.query('COMMIT'); await pause;

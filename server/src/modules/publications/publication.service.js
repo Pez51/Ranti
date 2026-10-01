@@ -293,9 +293,10 @@ export async function listPublications(db, input = {}) {
 export async function getPublicPublication(db, id) {
   const row = (await db.query(`SELECT p.id, p.title, p.description, p.category, p.condition, p.modality,
     p.price, p.guarantee_amount, p.available_from, p.available_until, p.created_at,
+    p.contract_version,
     u.reputation_score AS owner_reputation_score,
     COALESCE((SELECT json_agg(json_build_object('image_url', image_url, 'is_primary', is_primary)
       ORDER BY position) FROM publication_images WHERE publication_id=p.id),'[]'::json) AS images
     FROM publications p JOIN users u ON u.id=p.owner_id WHERE p.id=$1 AND p.status = 'Activa'`, [uuid(id)])).rows[0];
-  if (!row) throw missing(); return row;
+  if (!row) throw missing(); row.contract_version = Number(row.contract_version); return row;
 }

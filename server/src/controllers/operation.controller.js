@@ -16,6 +16,12 @@ export const listParticipantOperations = handle(async (req, res) =>
   res.json(await operations.listParticipantOperations(pool, req.user.id, req.query)));
 export const getParticipantOperation = handle(async (req, res) =>
   res.json({ operation: await operations.getParticipantOperation(pool, req.user.id, req.params.id) }));
+export const acceptOperation = handle(async (req, res) =>
+  res.json({ operation: await operations.decideOperation(pool, req.user.id, req.params.id,
+    { ...req.body, decision: 'accept' }) }));
+export const rejectOperation = handle(async (req, res) =>
+  res.json({ operation: await operations.decideOperation(pool, req.user.id, req.params.id,
+    { ...req.body, decision: 'reject' }) }));
 
 // 2. Confirmar Entrega Física (El Oferente ingresa el OTP)
 export const confirmDelivery = async (req, res) => {

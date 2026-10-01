@@ -1,5 +1,6 @@
 import express from 'express';
-import { createOperation, listParticipantOperations, getParticipantOperation, confirmDelivery } from '../controllers/operation.controller.js';
+import { createOperation, listParticipantOperations, getParticipantOperation, acceptOperation,
+  rejectOperation, confirmDelivery } from '../controllers/operation.controller.js';
 import { requireAuth, requireVerifiedAccount } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
@@ -10,6 +11,8 @@ router.use(requireAuth, requireVerifiedAccount);
 router.post('/', createOperation);
 router.get('/mine', listParticipantOperations);
 router.get('/:id', getParticipantOperation);
+router.post('/:id/accept', acceptOperation);
+router.post('/:id/reject', rejectOperation);
 
 // Confirmar la entrega de un equipo mediante OTP
 router.post('/:id/confirm', confirmDelivery);

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import pg from 'pg';
+import { createDisposableDatabase } from './helpers/disposable-database.js';
 import bcrypt from 'bcryptjs';
 import express from 'express';
 import request from 'supertest';
@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const enabled = process.env.RANTI_EPHEMERAL_DB === '1' && !!process.env.TEST_DATABASE_URL;
 describe.skipIf(!enabled)('verified institutional registration with disposable PostgreSQL', () => {
-  let db, provider, registerPendingAccount, resendVerification, verifyPendingAccount, app;
+  let db, database, provider, registerPendingAccount, resendVerification, verifyPendingAccount, app;
   const input = (override = {}) => ({ email: `identity-${randomUUID()}@ucsm.edu.pe`, password: 'identity-password',
     acceptTerms: true, termsVersion: '2026-09', ...override });
   const readUser = async id => (await db.query('SELECT * FROM users WHERE id = $1', [id])).rows[0];
@@ -20,10 +20,8 @@ describe.skipIf(!enabled)('verified institutional registration with disposable P
   });
 
   beforeAll(async () => {
-    const url = new URL(process.env.TEST_DATABASE_URL);
-    if (url.hostname !== '127.0.0.1' || url.pathname !== '/ranti_test' || url.username !== 'ranti_test')
-      throw new Error('Identity integration tests require the disposable local database.');
-    db = new pg.Pool({ connectionString: url.href });
+    database = await createDisposableDatabase();
+    db = database.db;
     await (await import('../src/db/migrate.js')).runMigrations(db);
     vi.stubEnv('IDENTITY_PROVIDER', 'simulated');
     vi.stubEnv('IDENTITY_SIMULATOR_EXPOSE_CODE', 'true');
@@ -36,7 +34,7 @@ describe.skipIf(!enabled)('verified institutional registration with disposable P
     app = express(); app.use(express.json());
     app.use('/api/auth', (await import('../src/routes/auth.routes.js')).default);
   });
-  afterAll(async () => { vi.unstubAllEnvs(); vi.doUnmock('../src/config/database.js'); if (db) await db.end(); });
+  afterAll(async () => { vi.unstubAllEnvs(); vi.doUnmock('../src/config/database.js'); if (database) await database.close(); });
 
   it.each([
     ['base domain', local => `${local}@ucsm.edu.pe`],

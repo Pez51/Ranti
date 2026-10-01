@@ -1,22 +1,19 @@
 import { randomUUID } from 'node:crypto';
-import pg from 'pg';
+import { createDisposableDatabase } from './helpers/disposable-database.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const enabled = process.env.RANTI_EPHEMERAL_DB === '1' && !!process.env.TEST_DATABASE_URL;
 
 describe.skipIf(!enabled)('Outbox with disposable PostgreSQL', () => {
-  let db;
+  let db, database;
   let enqueueOutboxEvent, claimOutboxBatch, completeOutboxEvent, failOutboxEvent, processOutboxBatch, createInAppNotification;
   const event = (overrides = {}) => ({ aggregateType: 'operation', aggregateId: randomUUID(),
     eventType: 'operation.created', payload: { status: 'Pendiente' }, deduplicationKey: randomUUID(), ...overrides });
   const read = async id => (await db.query('SELECT * FROM outbox_events WHERE id = $1', [id])).rows[0];
 
   beforeAll(async () => {
-    const url = new URL(process.env.TEST_DATABASE_URL);
-    if (url.hostname !== '127.0.0.1' || url.pathname !== '/ranti_test' || url.username !== 'ranti_test') {
-      throw new Error('Outbox tests require the disposable local database.');
-    }
-    db = new pg.Pool({ connectionString: url.href });
+    database = await createDisposableDatabase();
+    db = database.db;
     const { runMigrations } = await import('../src/db/migrate.js');
     ({ enqueueOutboxEvent, claimOutboxBatch, completeOutboxEvent, failOutboxEvent } = await import('../src/modules/outbox/outbox.repository.js'));
     ({ processOutboxBatch } = await import('../src/modules/outbox/outbox.worker.js'));
@@ -24,7 +21,7 @@ describe.skipIf(!enabled)('Outbox with disposable PostgreSQL', () => {
     await runMigrations(db);
   });
   beforeEach(async () => { await db.query('TRUNCATE outbox_events'); });
-  afterAll(async () => { if (db) await db.end(); });
+  afterAll(async () => { if (database) await database.close(); });
 
   it('deduplicates concurrent enqueue and preserves the original payload', async () => {
     const input = event();

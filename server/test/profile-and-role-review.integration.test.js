@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import pg from 'pg';
+import { createDisposableDatabase } from './helpers/disposable-database.js';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const enabled = process.env.RANTI_EPHEMERAL_DB === '1' && !!process.env.TEST_DATABASE_URL;
 describe.skipIf(!enabled)('profile and role review on disposable PostgreSQL', () => {
-  let db, app, getOwnProfile, updateOwnProfile, requestStudentRole, decideStudentRole;
+  let db, database, app, getOwnProfile, updateOwnProfile, requestStudentRole, decideStudentRole;
   const token = id => jwt.sign({ id, role: 'Administrador' }, process.env.JWT_SECRET || 'ranti-test-jwt-secret-local-only');
   const auth = id => ({ Authorization: `Bearer ${token(id)}` });
   async function user(role = 'Egresado', status = 'Activa', verification = 'Verificado', id = randomUUID()) {
@@ -22,17 +22,15 @@ describe.skipIf(!enabled)('profile and role review on disposable PostgreSQL', ()
     };
   }
   beforeAll(async () => {
-    const url = new URL(process.env.TEST_DATABASE_URL);
-    if (url.hostname !== '127.0.0.1' || url.pathname !== '/ranti_test' || url.username !== 'ranti_test')
-      throw new Error('Profile integration tests require the disposable local database.');
-    db = new pg.Pool({ connectionString: url.href });
+    database = await createDisposableDatabase();
+    db = database.db;
     await (await import('../src/db/migrate.js')).runMigrations(db);
     vi.resetModules(); vi.doMock('../src/config/database.js', () => ({ default: db }));
     ({ getOwnProfile, updateOwnProfile } = await import('../src/modules/users/profile.service.js'));
     ({ requestStudentRole, decideStudentRole } = await import('../src/modules/users/role-review.service.js'));
     app = (await import('../src/app.js')).default;
   });
-  afterAll(async () => { vi.doUnmock('../src/config/database.js'); if (db) await db.end(); });
+  afterAll(async () => { vi.doUnmock('../src/config/database.js'); if (database) await database.close(); });
 
   it('persists self profile changes and null clearing while keeping metrics and protected fields unchanged', async () => {
     const owner = await user(); const other = await user();

@@ -1,25 +1,22 @@
 import { randomUUID } from 'node:crypto';
-import pg from 'pg';
+import { createDisposableDatabase } from './helpers/disposable-database.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const enabled = process.env.RANTI_EPHEMERAL_DB === '1' && !!process.env.TEST_DATABASE_URL;
 
 describe.skipIf(!enabled)('Audit repository with disposable PostgreSQL', () => {
-  let db;
+  let db, database;
   let appendAudit;
 
   beforeAll(async () => {
-    const url = new URL(process.env.TEST_DATABASE_URL);
-    if (url.hostname !== '127.0.0.1' || url.pathname !== '/ranti_test' || url.username !== 'ranti_test') {
-      throw new Error('Audit integration tests require the disposable local database.');
-    }
-    db = new pg.Pool({ connectionString: url.href });
+    database = await createDisposableDatabase();
+    db = database.db;
     const { runMigrations } = await import('../src/db/migrate.js');
     ({ appendAudit } = await import('../src/modules/audit/audit.repository.js'));
     await runMigrations(db);
   });
 
-  afterAll(async () => { if (db) await db.end(); });
+  afterAll(async () => { if (database) await database.close(); });
 
   it('inserts and reads an audit row with JSON and default metadata', async () => {
     const entityId = randomUUID();

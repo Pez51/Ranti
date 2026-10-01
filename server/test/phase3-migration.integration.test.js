@@ -216,6 +216,27 @@ describe.skipIf(!enabled)('Phase 3 operation and reservation migration', () => {
       .rejects.toMatchObject({ code: '23505' });
   });
 
+  it('validates the final operation interval after two updates in one transaction', async () => {
+    await upgrade();
+    const id = (await db.query(`INSERT INTO operations
+      (publication_id,demandante_id,oferente_id,modality,status,start_date,end_date,contract_snapshot,
+       requested_price,requested_guarantee_amount,requested_contract_version,request_expires_at,accepted_at,decided_at,decided_by)
+      VALUES ($1,$2,$3,'Alquiler','Aceptada',$4,$5,'{}',25,5,1,now()+interval '48 hours',now(),now(),$3) RETURNING id`,
+    [publication, requester, owner, first, middle])).rows[0].id;
+    await legacyReservation(id);
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('UPDATE operations SET end_date=$2 WHERE id=$1', [id, last]);
+      await client.query('UPDATE operations SET end_date=$2 WHERE id=$1', [id, middle]);
+      await expect(client.query('COMMIT')).resolves.toMatchObject({ command: 'COMMIT' });
+    } finally {
+      await client.query('ROLLBACK'); client.release();
+    }
+    expect((await db.query('SELECT end_date FROM operations WHERE id=$1', [id])).rows[0].end_date)
+      .toEqual(new Date(middle));
+  });
+
   it('rejects null statuses, invalid release metadata, and later snapshot edits', async () => {
     await upgrade();
     await expect(db.query(`INSERT INTO operations

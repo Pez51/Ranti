@@ -132,6 +132,9 @@ export const createOperation = async (req, res) => {
     if (error.message === 'Publicación no encontrada.') {
       return res.status(404).json({ error: 'Publicación no encontrada.' });
     }
+    if (error.code === '23505' && error.constraint === 'reservations_one_live_sale_per_publication') {
+      return res.status(409).json({ error: 'La publicación ya está reservada.' });
+    }
     console.error('Error creando operación:', error.message);
     res.status(500).json({ error: 'No se pudo crear la operación.' });
   } finally {

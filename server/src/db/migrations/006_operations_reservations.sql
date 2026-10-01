@@ -231,15 +231,18 @@ CREATE CONSTRAINT TRIGGER reservations_operation_match
 CREATE FUNCTION check_operation_reservation_match() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE
+    op_now operations%ROWTYPE;
     reservation reservations%ROWTYPE;
 BEGIN
-    FOR reservation IN SELECT * FROM reservations WHERE operation_id = NEW.id LOOP
-        IF reservation.publication_id IS DISTINCT FROM NEW.publication_id
-           OR (NEW.modality = 'Venta' AND (reservation.start_date IS NOT NULL OR reservation.end_date IS NOT NULL))
-           OR (NEW.modality <> 'Venta' AND (reservation.start_date IS DISTINCT FROM NEW.start_date
-                OR reservation.end_date IS DISTINCT FROM NEW.end_date))
-           OR NEW.status IN ('Pendiente', 'Rechazada', 'Expirada')
-           OR (NEW.status = 'Cancelada' AND NEW.accepted_at IS NULL) THEN
+    SELECT * INTO op_now FROM operations WHERE id = NEW.id;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    FOR reservation IN SELECT * FROM reservations WHERE operation_id = op_now.id LOOP
+        IF reservation.publication_id IS DISTINCT FROM op_now.publication_id
+           OR (op_now.modality = 'Venta' AND (reservation.start_date IS NOT NULL OR reservation.end_date IS NOT NULL))
+           OR (op_now.modality <> 'Venta' AND (reservation.start_date IS DISTINCT FROM op_now.start_date
+                OR reservation.end_date IS DISTINCT FROM op_now.end_date))
+           OR op_now.status IN ('Pendiente', 'Rechazada', 'Expirada')
+           OR (op_now.status = 'Cancelada' AND op_now.accepted_at IS NULL) THEN
             RAISE EXCEPTION 'operation no longer matches its reservation publication and interval';
         END IF;
     END LOOP;

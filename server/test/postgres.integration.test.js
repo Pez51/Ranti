@@ -217,6 +217,18 @@ describe.skipIf(!enabled)('API con PostgreSQL temporal real', () => {
     expect(rows).toHaveLength(1);
   });
 
+  it('devuelve 409 al segundo intento de compra de una venta reservada', async () => {
+    const pub = await publication('Activa', 'Venta');
+    const first = await request(app).post('/api/operations').set(auth(buyer)).send({ publication_id: pub });
+    expect(first.status).toBe(201);
+    const second = await request(app).post('/api/operations').set(auth(buyer)).send({ publication_id: pub });
+    expect(second.status).toBe(409);
+    expect(second.body.error).toEqual(expect.any(String));
+    expect(JSON.stringify(second.body)).not.toMatch(/reservations_one_live_sale|duplicate key/i);
+    expect((await pool.query('SELECT id FROM operations WHERE publication_id=$1', [pub])).rows).toHaveLength(1);
+    expect((await pool.query('SELECT id FROM reservations WHERE publication_id=$1', [pub])).rows).toHaveLength(1);
+  });
+
   it.each(['Pausada', 'Borrador', 'Retirada'])('no reserva una publicación %s', async (status) => {
     const pub = await publication(status);
     const res = await request(app).post('/api/operations').set(auth(buyer)).send({

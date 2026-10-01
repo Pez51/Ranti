@@ -55,6 +55,17 @@ describe('operation request parsing and terms', () => {
     ]) expect(() => validateRequestedTerms(pub, req, now)).toThrow();
   });
 
+  it('compares PostgreSQL bigint versions without losing integer precision', () => {
+    const request = { ...requestInput, requester_id: requester };
+    expect(validateRequestedTerms({ ...sale, contract_version: '3' }, request, now)).toBe(true);
+    expect(validateRequestedTerms({ ...sale, contract_version: '3' },
+      { ...request, requested_contract_version: '3' }, now)).toBe(true);
+    for (const version of ['03', '3.0', 'NaN', '9007199254740992', 9007199254740992, null]) {
+      expect(() => validateRequestedTerms({ ...sale, contract_version: version }, request, now)).toThrow();
+      expect(() => validateRequestedTerms(sale, { ...request, requested_contract_version: version }, now)).toThrow();
+    }
+  });
+
   it('converts date-only Peru midnight and accepts an exact half-open availability window', () => {
     const input = parseOperationRequest({ ...requestInput, requested_guarantee_amount: '10.00',
       start_date: '2026-10-02', end_date: '2026-10-10' });
@@ -101,9 +112,36 @@ describe('decisions, transitions, snapshots and projections', () => {
       precondition_key: 'request_available', effect_key: 'create_reservation' };
     const context = { operation: pending, publication: sale, actorId: owner, now, reservationConflict: false };
     expect(authorizeTransition(rule, context)).toEqual({ createReservation: true, releaseReservation: false, retainReservation: false });
+    expect(authorizeTransition(rule, { ...context,
+      operation: { ...pending, requested_contract_version: '3' },
+      publication: { ...sale, contract_version: '3' },
+    })).toEqual({ createReservation: true, releaseReservation: false, retainReservation: false });
     expect(() => authorizeTransition(rule, { ...context, actorId: requester })).toThrow();
     expect(() => authorizeTransition(rule, { ...context, now: pending.request_expires_at })).toThrow();
     expect(() => authorizeTransition(rule, { ...context, reservationConflict: true })).toThrow();
+    for (const reservationConflict of [undefined, null, 0, 'false']) {
+      expect(() => authorizeTransition(rule, { ...context, reservationConflict })).toThrow();
+    }
+  });
+
+  it('requires explicit economic and delivery precondition results before cancellation', () => {
+    const acceptedRule = { from_status: 'Aceptada', to_status: 'Cancelada', actor_kind: 'requester',
+      precondition_key: 'pre_economic', effect_key: 'release_reservation' };
+    const acceptedContext = { operation: { ...pending, status: 'Aceptada' }, actorId: requester, now };
+    expect(authorizeTransition(acceptedRule, { ...acceptedContext, hasEconomicMovement: false }))
+      .toEqual({ createReservation: false, releaseReservation: true, retainReservation: false });
+    for (const hasEconomicMovement of [undefined, null, 0, 'false', true]) {
+      expect(() => authorizeTransition(acceptedRule, { ...acceptedContext, hasEconomicMovement })).toThrow();
+    }
+
+    const deliveryRule = { from_status: 'Lista para entrega', to_status: 'Cancelación en reversión', actor_kind: 'requester',
+      precondition_key: 'pre_delivery', effect_key: 'retain_reservation' };
+    const deliveryContext = { operation: { ...pending, status: 'Lista para entrega' }, actorId: requester, now };
+    expect(authorizeTransition(deliveryRule, { ...deliveryContext, delivered: false }))
+      .toEqual({ createReservation: false, releaseReservation: false, retainReservation: true });
+    for (const delivered of [undefined, null, 0, 'false', true]) {
+      expect(() => authorizeTransition(deliveryRule, { ...deliveryContext, delivered })).toThrow();
+    }
   });
 
   it('rejects forged or unknown transition keys, status mismatch, and unauthorized actor kinds', () => {

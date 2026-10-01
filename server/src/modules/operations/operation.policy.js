@@ -56,13 +56,21 @@ function instant(value) {
   try { return dateValue(value); } catch { throw termsInvalid(); }
 }
 
+function safeVersion(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? value : null;
+  if (typeof value !== 'string' || value.length > 16 || !/^[1-9][0-9]*$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 export function validateRequestedTerms(publication, request, now) {
   if (!isObject(publication) || !isObject(request) || publication.status !== 'Activa' ||
       request.publication_id !== publication.id || request.requester_id === publication.owner_id ||
       !uuid.safeParse(request.requester_id).success || !uuid.safeParse(publication.owner_id).success ||
       !['Venta', 'Alquiler', 'Préstamo'].includes(publication.modality) ||
-      request.requested_contract_version !== publication.contract_version ||
-      !Number.isSafeInteger(publication.contract_version) || publication.contract_version < 1) throw termsInvalid();
+      safeVersion(publication.contract_version) === null ||
+      safeVersion(request.requested_contract_version) === null ||
+      safeVersion(request.requested_contract_version) !== safeVersion(publication.contract_version)) throw termsInvalid();
   let price, guarantee, requestedPrice, requestedGuarantee;
   try {
     price = money(publication.price ?? 0); guarantee = money(publication.guarantee_amount ?? 0);
@@ -127,7 +135,7 @@ export function authorizeTransition(rule, context) {
   } else if (rule.precondition_key === 'pending_request') {
     if (current >= expires) throw conflict();
   } else if (rule.precondition_key === 'request_available') {
-    if (current >= expires || context.reservationConflict) throw conflict();
+    if (current >= expires || typeof context.reservationConflict !== 'boolean' || context.reservationConflict) throw conflict();
     validateRequestedTerms(context.publication, {
       publication_id: operation.publication_id, requester_id: operation.demandante_id,
       requested_price: operation.requested_price,
@@ -148,8 +156,8 @@ export function authorizeTransition(rule, context) {
       }, current);
       if (context.publication.owner_id === operation.oferente_id && context.publication.modality === operation.modality) throw conflict();
     } catch (error) { if (error.code === 'OPERATION_CONFLICT') throw error; }
-  } else if (rule.precondition_key === 'pre_economic' && context.hasEconomicMovement) throw conflict();
-  else if (rule.precondition_key === 'pre_delivery' && context.delivered) throw conflict();
+  } else if (rule.precondition_key === 'pre_economic' && context.hasEconomicMovement !== false) throw conflict();
+  else if (rule.precondition_key === 'pre_delivery' && context.delivered !== false) throw conflict();
   return effects[rule.effect_key];
 }
 

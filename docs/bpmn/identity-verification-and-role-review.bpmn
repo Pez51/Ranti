@@ -1,0 +1,635 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_Registration" targetNamespace="https://ranti.local/bpmn/phase2">
+  <bpmn:process id="Process_Registration" name="Registro o reenvío de desafío" isExecutable="false">
+    <bpmn:documentation>Registro y reenvío terminan pendientes; confirmación empieza en otra petición. Errores SQL internos en issueChallenge revierten esa transacción, no el INSERT previo de cuenta. Evidencia: server/src/modules/identity/identity.service.js; server/test/identity.integration.test.js. Por confirmar: gobierno operativo de términos/proveedores, alta administrativa, retención de evidencia y despliegue de outbox.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_Registration">
+      <bpmn:lane id="Lane_Registration_Actor" name="Usuario"><bpmn:documentation>Responsabilidad confirmada: server/src/modules/identity/identity.service.js; server/test/identity.integration.test.js.</bpmn:documentation><bpmn:flowNodeRef>Registration_start</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_input</bpmn:flowNodeRef></bpmn:lane>
+      <bpmn:lane id="Lane_Registration_System" name="Sistema"><bpmn:documentation>Responsabilidad confirmada: server/src/modules/identity/identity.service.js; server/test/identity.integration.test.js.</bpmn:documentation><bpmn:flowNodeRef>Registration_valid</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_bad</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_kind</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_insert</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_insertResult</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_dup</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_dbError</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_issue</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_eligible</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_invalid</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_provider</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_available</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_unavailable</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_save</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_saved</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_pending</bpmn:flowNodeRef><bpmn:flowNodeRef>Registration_error</bpmn:flowNodeRef></bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Registration_start" name="Petición register / resend">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::registerPendingAccount; server/src/modules/identity/identity.service.js::resendVerification. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:outgoing>Registration_Flow_start_input</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Registration_input" name="Correo institucional y consentimiento">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::registrationInput; client/src/features/auth/Register.jsx::request. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_start_input</bpmn:incoming>
+      <bpmn:outgoing>Registration_Flow_input_valid</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Registration_valid" name="¿Entrada válida?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::parse; server/src/modules/identity/identity.service.js::registrationInput. Prueba: server/test/identity.integration.test.js. Dominio UCSM/subdominio válido; términos true, versión y contraseña válida en registro.</bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_input_valid</bpmn:incoming>
+      <bpmn:outgoing>Registration_Flow_valid_bad</bpmn:outgoing>
+      <bpmn:outgoing>Registration_Flow_valid_kind</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Registration_bad" name="Rechazo 400: dominio / términos / datos">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::parse. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_valid_bad</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="Registration_kind" name="¿Registro o reenvío?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::registerPendingAccount; server/src/modules/identity/identity.service.js::resendVerification. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_valid_kind</bpmn:incoming>
+      <bpmn:outgoing>Registration_Flow_kind_insert</bpmn:outgoing>
+      <bpmn:outgoing>Registration_Flow_kind_issue</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Registration_insert" name="Guardar Egresado pendiente (autocommit)">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::registerPendingAccount. Prueba: server/test/identity.integration.test.js. La cuenta queda confirmada antes de solicitar desafío; duplicado 23505 =&gt; 409 IDENTITY_CONFLICT.</bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_kind_insert</bpmn:incoming>
+      <bpmn:outgoing>Registration_Flow_insert_insertResult</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Registration_insertResult" name="¿Cuenta guardada?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::registerPendingAccount. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_insert_insertResult</bpmn:incoming>
+      <bpmn:outgoing>Registration_Flow_insertResult_dup</bpmn:outgoing>
+      <bpmn:outgoing>Registration_Flow_insertResult_dbError</bpmn:outgoing>
+      <bpmn:outgoing>Registration_Flow_insertResult_issue</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Registration_dup" name="Rechazo 409: correo duplicado">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::registerPendingAccount. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_insertResult_dup</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="Registration_dbError" name="Error 500 de persistencia">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::safeError; server/src/modules/identity/identity.service.js::transaction. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_insertResult_dbError</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Registration_issue" name="BEGIN; bloquear cuenta e invalidar desafíos">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::issueChallenge; server/src/modules/identity/identity.service.js::canVerify. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_kind_issue</bpmn:incoming>
+      <bpmn:incoming>Registration_Flow_insertResult_issue</bpmn:incoming>
+      <bpmn:outgoing>Registration_Flow_issue_eligible</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Registration_eligible" name="¿Cuenta pendiente elegible?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::canVerify; server/src/modules/identity/identity.service.js::issueChallenge. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_issue_eligible</bpmn:incoming>
+      <bpmn:outgoing>Registration_Flow_eligible_invalid</bpmn:outgoing>
+      <bpmn:outgoing>Registration_Flow_eligible_provider</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Registration_invalid" name="Rechazo 400; rollback desafío">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::issueChallenge; server/src/modules/identity/identity.service.js::invalidChallenge. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_eligible_invalid</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Registration_provider" name="Solicitar desafío simulado">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::issueChallenge; server/src/modules/identity/simulated-identity-provider.js::requestVerification. Prueba: server/test/identity.integration.test.js. Adaptador local: no intercambio de mensajes externo, SSO ni correo.</bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_eligible_provider</bpmn:incoming>
+      <bpmn:outgoing>Registration_Flow_provider_available</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Registration_available" name="¿Proveedor disponible?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::issueChallenge. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_provider_available</bpmn:incoming>
+      <bpmn:outgoing>Registration_Flow_available_unavailable</bpmn:outgoing>
+      <bpmn:outgoing>Registration_Flow_available_save</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Registration_unavailable" name="Pendiente 202: reenviar después">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::issueChallenge. Prueba: server/test/identity.integration.test.js. COMMIT de invalidación previa; cuenta pendiente conservada; verification_unavailable, retryable. Nuevo resend es otra petición.</bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_available_unavailable</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Registration_save" name="Guardar hash, vencimiento e intentos; COMMIT">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::issueChallenge. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_available_save</bpmn:incoming>
+      <bpmn:outgoing>Registration_Flow_save_saved</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Registration_saved" name="¿Transacción confirmada?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::transaction. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_save_saved</bpmn:incoming>
+      <bpmn:outgoing>Registration_Flow_saved_pending</bpmn:outgoing>
+      <bpmn:outgoing>Registration_Flow_saved_error</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Registration_pending" name="Pendiente: verification_pending">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::issueChallenge. Prueba: server/test/identity.integration.test.js. 201 registro / 200 reenvío; sin JWT. simulation_code solo si configuración explícita.</bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_saved_pending</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="Registration_error" name="Error 500: rollback del desafío">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::transaction. Prueba: server/test/identity.integration.test.js. La cuenta registrada antes sigue pendiente.</bpmn:documentation>
+      <bpmn:incoming>Registration_Flow_saved_error</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:dataObject id="Object_Registration_data"><bpmn:documentation>Confirmada. Evidencia: server/src/db/migrations/003_identity_publications.sql. Prueba: server/test/identity.integration.test.js. Hash; expiración diez minutos; máximo cinco intentos; consentimiento en users.</bpmn:documentation></bpmn:dataObject>
+    <bpmn:dataObjectReference id="Registration_data" name="users / identity_challenges" dataObjectRef="Object_Registration_data">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/db/migrations/003_identity_publications.sql. Prueba: server/test/identity.integration.test.js. Hash; expiración diez minutos; máximo cinco intentos; consentimiento en users.</bpmn:documentation>
+    </bpmn:dataObjectReference>
+    <bpmn:sequenceFlow id="Registration_Flow_start_input" sourceRef="Registration_start" targetRef="Registration_input"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/identity/identity.service.js::registerPendingAccount; server/src/modules/identity/identity.service.js::resendVerification; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_input_valid" sourceRef="Registration_input" targetRef="Registration_valid"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/identity/identity.service.js::registrationInput; client/src/features/auth/Register.jsx::request; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_valid_bad" sourceRef="Registration_valid" targetRef="Registration_bad" name="No"><bpmn:documentation>Confirmada. Condición: No. Evidencia: server/src/modules/identity/identity.service.js::parse; server/src/modules/identity/identity.service.js::registrationInput; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_valid_kind" sourceRef="Registration_valid" targetRef="Registration_kind" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/identity/identity.service.js::parse; server/src/modules/identity/identity.service.js::registrationInput; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_kind_insert" sourceRef="Registration_kind" targetRef="Registration_insert" name="Registro"><bpmn:documentation>Confirmada. Condición: Registro. Evidencia: server/src/modules/identity/identity.service.js::registerPendingAccount; server/src/modules/identity/identity.service.js::resendVerification; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_kind_issue" sourceRef="Registration_kind" targetRef="Registration_issue" name="Reenvío"><bpmn:documentation>Confirmada. Condición: Reenvío. Evidencia: server/src/modules/identity/identity.service.js::registerPendingAccount; server/src/modules/identity/identity.service.js::resendVerification; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_insert_insertResult" sourceRef="Registration_insert" targetRef="Registration_insertResult"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/identity/identity.service.js::registerPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_insertResult_dup" sourceRef="Registration_insertResult" targetRef="Registration_dup" name="Correo existente"><bpmn:documentation>Confirmada. Condición: Correo existente. Evidencia: server/src/modules/identity/identity.service.js::registerPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_insertResult_dbError" sourceRef="Registration_insertResult" targetRef="Registration_dbError" name="Fallo SQL"><bpmn:documentation>Confirmada. Condición: Fallo SQL. Evidencia: server/src/modules/identity/identity.service.js::registerPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_insertResult_issue" sourceRef="Registration_insertResult" targetRef="Registration_issue" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/identity/identity.service.js::registerPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_issue_eligible" sourceRef="Registration_issue" targetRef="Registration_eligible"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/identity/identity.service.js::issueChallenge; server/src/modules/identity/identity.service.js::canVerify; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_eligible_invalid" sourceRef="Registration_eligible" targetRef="Registration_invalid" name="No"><bpmn:documentation>Confirmada. Condición: No. Evidencia: server/src/modules/identity/identity.service.js::canVerify; server/src/modules/identity/identity.service.js::issueChallenge; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_eligible_provider" sourceRef="Registration_eligible" targetRef="Registration_provider" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/identity/identity.service.js::canVerify; server/src/modules/identity/identity.service.js::issueChallenge; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_provider_available" sourceRef="Registration_provider" targetRef="Registration_available"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/identity/identity.service.js::issueChallenge; server/src/modules/identity/simulated-identity-provider.js::requestVerification; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_available_unavailable" sourceRef="Registration_available" targetRef="Registration_unavailable" name="No"><bpmn:documentation>Confirmada. Condición: No. Evidencia: server/src/modules/identity/identity.service.js::issueChallenge; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_available_save" sourceRef="Registration_available" targetRef="Registration_save" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/identity/identity.service.js::issueChallenge; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_save_saved" sourceRef="Registration_save" targetRef="Registration_saved"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/identity/identity.service.js::issueChallenge; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_saved_pending" sourceRef="Registration_saved" targetRef="Registration_pending" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/identity/identity.service.js::transaction; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Registration_Flow_saved_error" sourceRef="Registration_saved" targetRef="Registration_error" name="No"><bpmn:documentation>Confirmada. Condición: No. Evidencia: server/src/modules/identity/identity.service.js::transaction; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmn:process id="Process_Confirmation" name="Confirmación de identidad" isExecutable="false">
+    <bpmn:documentation>Las expiraciones y fallos de código son rechazos con contabilidad confirmada, no rollback de intentos. Evidencia: server/src/modules/identity/identity.service.js; server/test/identity.integration.test.js. Por confirmar: gobierno operativo de términos/proveedores, alta administrativa, retención de evidencia y despliegue de outbox.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_Confirmation">
+      <bpmn:lane id="Lane_Confirmation_Actor" name="Usuario"><bpmn:documentation>Responsabilidad confirmada: server/src/modules/identity/identity.service.js; server/test/identity.integration.test.js.</bpmn:documentation><bpmn:flowNodeRef>Confirmation_start</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_code</bpmn:flowNodeRef></bpmn:lane>
+      <bpmn:lane id="Lane_Confirmation_System" name="Sistema"><bpmn:documentation>Responsabilidad confirmada: server/src/modules/identity/identity.service.js; server/test/identity.integration.test.js.</bpmn:documentation><bpmn:flowNodeRef>Confirmation_checks</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_invalid</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_expiry</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_expire</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_rejected</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_verify</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_result</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_outage</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_attempt</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_wrong</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_again</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_activate</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_commit</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_error</bpmn:flowNodeRef><bpmn:flowNodeRef>Confirmation_success</bpmn:flowNodeRef></bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Confirmation_start" name="POST verification/confirm">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:outgoing>Confirmation_Flow_start_code</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Confirmation_code" name="Ingresar challengeId y seis dígitos">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::confirmationInput; client/src/features/auth/Register.jsx::request. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_start_code</bpmn:incoming>
+      <bpmn:outgoing>Confirmation_Flow_code_checks</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Confirmation_checks" name="¿Cuenta/desafío utilizables?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount. Prueba: server/test/identity.integration.test.js. Validación input; bloquear usuario antes de desafío; sent, registration, proveedor/email, intentos &lt; máximo.</bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_code_checks</bpmn:incoming>
+      <bpmn:outgoing>Confirmation_Flow_checks_invalid</bpmn:outgoing>
+      <bpmn:outgoing>Confirmation_Flow_checks_expiry</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Confirmation_invalid" name="Rechazo: reutilizado / agotado / inválido">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount; server/src/modules/identity/identity.service.js::invalidChallenge. Prueba: server/test/identity.integration.test.js. 400 IDENTITY_INVALID_CHALLENGE; rollback sin activación.</bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_checks_invalid</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="Confirmation_expiry" name="¿Expirado antes de verificar?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount::expired. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_checks_expiry</bpmn:incoming>
+      <bpmn:outgoing>Confirmation_Flow_expiry_expire</bpmn:outgoing>
+      <bpmn:outgoing>Confirmation_Flow_expiry_verify</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Confirmation_expire" name="Persistir expired; COMMIT">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_expiry_expire</bpmn:incoming>
+      <bpmn:incoming>Confirmation_Flow_again_expire</bpmn:incoming>
+      <bpmn:outgoing>Confirmation_Flow_expire_rejected</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="Confirmation_rejected" name="Rechazo 400: desafío expirado">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount. Prueba: server/test/identity.integration.test.js. Rechazo fuera de transaction para conservar expiración.</bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_expire_rejected</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Confirmation_verify" name="Verificar hash y resolver identidad simulada">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount; server/src/modules/identity/simulated-identity-provider.js::verifyChallenge/resolveInstitutionalIdentity. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_expiry_verify</bpmn:incoming>
+      <bpmn:outgoing>Confirmation_Flow_verify_result</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Confirmation_result" name="¿Resultado del proveedor?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_verify_result</bpmn:incoming>
+      <bpmn:outgoing>Confirmation_Flow_result_outage</bpmn:outgoing>
+      <bpmn:outgoing>Confirmation_Flow_result_attempt</bpmn:outgoing>
+      <bpmn:outgoing>Confirmation_Flow_result_again</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Confirmation_outage" name="Error 503: rollback; reintento permitido">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::unavailable; server/src/modules/identity/identity.service.js::transaction. Prueba: server/test/identity.integration.test.js. IDENTITY_UNAVAILABLE; no consume intentos. Reintentar confirmación o reenviar en otra petición.</bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_result_outage</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Confirmation_attempt" name="Incrementar intento; quinto =&gt; failed; COMMIT">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_result_attempt</bpmn:incoming>
+      <bpmn:outgoing>Confirmation_Flow_attempt_wrong</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="Confirmation_wrong" name="Rechazo 400: código incorrecto">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount. Prueba: server/test/identity.integration.test.js. Contador persiste; después del quinto incluso código correcto se rechaza.</bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_attempt_wrong</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="Confirmation_again" name="¿Vencido tras resolver?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount::expired. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_result_again</bpmn:incoming>
+      <bpmn:outgoing>Confirmation_Flow_again_expire</bpmn:outgoing>
+      <bpmn:outgoing>Confirmation_Flow_again_activate</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Confirmation_activate" name="Activa / Verificado; consumir; audit + outbox">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount. Prueba: server/test/identity.integration.test.js. Dentro de una transacción; rol Egresado no cambia; identity.verified sin secretos.</bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_again_activate</bpmn:incoming>
+      <bpmn:outgoing>Confirmation_Flow_activate_commit</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Confirmation_commit" name="¿COMMIT y efectos correctos?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::transaction; server/src/modules/identity/identity.service.js::verifyPendingAccount. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_activate_commit</bpmn:incoming>
+      <bpmn:outgoing>Confirmation_Flow_commit_success</bpmn:outgoing>
+      <bpmn:outgoing>Confirmation_Flow_commit_error</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Confirmation_error" name="Error 500: rollback estado/audit/outbox">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::transaction. Prueba: server/test/identity.integration.test.js. Desafío permanece sent y cuenta sin verificar; se puede reintentar.</bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_commit_error</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="Confirmation_success" name="Éxito: Egresado activo y JWT">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/controllers/auth.controller.js::confirm. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>Confirmation_Flow_commit_success</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:dataObject id="Object_Confirmation_data"><bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount. Prueba: server/test/identity.integration.test.js. </bpmn:documentation></bpmn:dataObject>
+    <bpmn:dataObjectReference id="Confirmation_data" name="users + desafío + audit_logs + outbox_events" dataObjectRef="Object_Confirmation_data">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount. Prueba: server/test/identity.integration.test.js. </bpmn:documentation>
+    </bpmn:dataObjectReference>
+    <bpmn:sequenceFlow id="Confirmation_Flow_start_code" sourceRef="Confirmation_start" targetRef="Confirmation_code"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_code_checks" sourceRef="Confirmation_code" targetRef="Confirmation_checks"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/identity/identity.service.js::confirmationInput; client/src/features/auth/Register.jsx::request; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_checks_invalid" sourceRef="Confirmation_checks" targetRef="Confirmation_invalid" name="No / input inválido"><bpmn:documentation>Confirmada. Condición: No / input inválido. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_checks_expiry" sourceRef="Confirmation_checks" targetRef="Confirmation_expiry" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_expiry_expire" sourceRef="Confirmation_expiry" targetRef="Confirmation_expire" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount::expired; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_expiry_verify" sourceRef="Confirmation_expiry" targetRef="Confirmation_verify" name="No"><bpmn:documentation>Confirmada. Condición: No. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount::expired; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_expire_rejected" sourceRef="Confirmation_expire" targetRef="Confirmation_rejected"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_verify_result" sourceRef="Confirmation_verify" targetRef="Confirmation_result"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount; server/src/modules/identity/simulated-identity-provider.js::verifyChallenge/resolveInstitutionalIdentity; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_result_outage" sourceRef="Confirmation_result" targetRef="Confirmation_outage" name="Caída / identidad incongruente"><bpmn:documentation>Confirmada. Condición: Caída / identidad incongruente. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_result_attempt" sourceRef="Confirmation_result" targetRef="Confirmation_attempt" name="Código incorrecto"><bpmn:documentation>Confirmada. Condición: Código incorrecto. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_attempt_wrong" sourceRef="Confirmation_attempt" targetRef="Confirmation_wrong"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_result_again" sourceRef="Confirmation_result" targetRef="Confirmation_again" name="Código e identidad válidos"><bpmn:documentation>Confirmada. Condición: Código e identidad válidos. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_again_expire" sourceRef="Confirmation_again" targetRef="Confirmation_expire" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount::expired; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_again_activate" sourceRef="Confirmation_again" targetRef="Confirmation_activate" name="No"><bpmn:documentation>Confirmada. Condición: No. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount::expired; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_activate_commit" sourceRef="Confirmation_activate" targetRef="Confirmation_commit"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/identity/identity.service.js::verifyPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_commit_success" sourceRef="Confirmation_commit" targetRef="Confirmation_success" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/identity/identity.service.js::transaction; server/src/modules/identity/identity.service.js::verifyPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Confirmation_Flow_commit_error" sourceRef="Confirmation_commit" targetRef="Confirmation_error" name="Fallo audit/outbox/SQL"><bpmn:documentation>Confirmada. Condición: Fallo audit/outbox/SQL. Evidencia: server/src/modules/identity/identity.service.js::transaction; server/src/modules/identity/identity.service.js::verifyPendingAccount; server/test/identity.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmn:process id="Process_RoleRequest" name="Solicitud de condición Estudiante" isExecutable="false">
+    <bpmn:documentation>GET de historial propio filtra user_id. No se infiere almacenamiento privado remoto ni recogida de DNI. Evidencia: server/src/modules/users/role-review.service.js; server/test/profile-and-role-review.integration.test.js. Por confirmar: gobierno operativo de términos/proveedores, alta administrativa, retención de evidencia y despliegue de outbox.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_RoleRequest">
+      <bpmn:lane id="Lane_RoleRequest_Actor" name="Egresado"><bpmn:documentation>Responsabilidad confirmada: server/src/modules/users/role-review.service.js; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation><bpmn:flowNodeRef>RoleRequest_start</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleRequest_evidence</bpmn:flowNodeRef></bpmn:lane>
+      <bpmn:lane id="Lane_RoleRequest_System" name="Sistema"><bpmn:documentation>Responsabilidad confirmada: server/src/modules/users/role-review.service.js; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation><bpmn:flowNodeRef>RoleRequest_validate</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleRequest_invalid</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleRequest_auth</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleRequest_denied</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleRequest_insert</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleRequest_result</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleRequest_pending</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleRequest_duplicate</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleRequest_error</bpmn:flowNodeRef></bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="RoleRequest_start" name="POST users/me/role-requests">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::requestStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:outgoing>RoleRequest_Flow_start_evidence</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="RoleRequest_evidence" name="Presentar referencia HTTPS y metadatos">
+      <bpmn:documentation>Confirmada. Evidencia: client/src/features/dashboard/UserProfile.jsx; server/src/modules/users/role-review.service.js::requestStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleRequest_Flow_start_evidence</bpmn:incoming>
+      <bpmn:outgoing>RoleRequest_Flow_evidence_validate</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="RoleRequest_validate" name="¿Referencia y metadatos válidos?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::requestStudentRole; server/src/modules/users/role-review.service.js::metadata; server/src/modules/users/profile.service.js::validHttpsReference. Prueba: server/test/profile-and-role-review.integration.test.js. Referencia opaca, no binario; cuatro strings allowlist; privacidad del destino remoto Por confirmar.</bpmn:documentation>
+      <bpmn:incoming>RoleRequest_Flow_evidence_validate</bpmn:incoming>
+      <bpmn:outgoing>RoleRequest_Flow_validate_invalid</bpmn:outgoing>
+      <bpmn:outgoing>RoleRequest_Flow_validate_auth</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="RoleRequest_invalid" name="Rechazo 400: evidencia inválida">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::invalid; server/src/modules/users/role-review.service.js::metadata. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleRequest_Flow_validate_invalid</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="RoleRequest_auth" name="¿Egresado activo/verificado vigente?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::requireCurrentUser; server/src/modules/users/role-review.service.js::requestStudentRole; server/src/middlewares/auth.middleware.js. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleRequest_Flow_validate_auth</bpmn:incoming>
+      <bpmn:outgoing>RoleRequest_Flow_auth_denied</bpmn:outgoing>
+      <bpmn:outgoing>RoleRequest_Flow_auth_insert</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="RoleRequest_denied" name="Rechazo 401/403: acceso">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::requestStudentRole; server/src/middlewares/auth.middleware.js. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleRequest_Flow_auth_denied</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="RoleRequest_insert" name="BEGIN; bloquear usuario; insertar pending">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::requestStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleRequest_Flow_auth_insert</bpmn:incoming>
+      <bpmn:outgoing>RoleRequest_Flow_insert_result</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="RoleRequest_result" name="¿Inserción confirmada?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::transaction; server/src/modules/users/role-review.service.js::requestStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleRequest_Flow_insert_result</bpmn:incoming>
+      <bpmn:outgoing>RoleRequest_Flow_result_pending</bpmn:outgoing>
+      <bpmn:outgoing>RoleRequest_Flow_result_duplicate</bpmn:outgoing>
+      <bpmn:outgoing>RoleRequest_Flow_result_error</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="RoleRequest_pending" name="Pendiente: revisión manual Estudiante">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::requestStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleRequest_Flow_result_pending</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="RoleRequest_duplicate" name="Rechazo 409: ROLE_REQUEST_PENDING">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::transaction. Prueba: server/test/profile-and-role-review.integration.test.js. Índice único parcial arbitra duplicados concurrentes.</bpmn:documentation>
+      <bpmn:incoming>RoleRequest_Flow_result_duplicate</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="RoleRequest_error" name="Error 500: rollback solicitud">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::transaction. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleRequest_Flow_result_error</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:dataObject id="Object_RoleRequest_data"><bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::publicRequest; server/src/db/migrations/003_identity_publications.sql. Prueba: server/test/profile-and-role-review.integration.test.js. Acceso API propio o administrador; no escritura de auditoría/outbox al crear solicitud.</bpmn:documentation></bpmn:dataObject>
+    <bpmn:dataObjectReference id="RoleRequest_data" name="role_requests: referencia privada y metadatos" dataObjectRef="Object_RoleRequest_data">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::publicRequest; server/src/db/migrations/003_identity_publications.sql. Prueba: server/test/profile-and-role-review.integration.test.js. Acceso API propio o administrador; no escritura de auditoría/outbox al crear solicitud.</bpmn:documentation>
+    </bpmn:dataObjectReference>
+    <bpmn:sequenceFlow id="RoleRequest_Flow_start_evidence" sourceRef="RoleRequest_start" targetRef="RoleRequest_evidence"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/users/role-review.service.js::requestStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleRequest_Flow_evidence_validate" sourceRef="RoleRequest_evidence" targetRef="RoleRequest_validate"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: client/src/features/dashboard/UserProfile.jsx; server/src/modules/users/role-review.service.js::requestStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleRequest_Flow_validate_invalid" sourceRef="RoleRequest_validate" targetRef="RoleRequest_invalid" name="No"><bpmn:documentation>Confirmada. Condición: No. Evidencia: server/src/modules/users/role-review.service.js::requestStudentRole; server/src/modules/users/role-review.service.js::metadata; server/src/modules/users/profile.service.js::validHttpsReference; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleRequest_Flow_validate_auth" sourceRef="RoleRequest_validate" targetRef="RoleRequest_auth" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/users/role-review.service.js::requestStudentRole; server/src/modules/users/role-review.service.js::metadata; server/src/modules/users/profile.service.js::validHttpsReference; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleRequest_Flow_auth_denied" sourceRef="RoleRequest_auth" targetRef="RoleRequest_denied" name="No"><bpmn:documentation>Confirmada. Condición: No. Evidencia: server/src/modules/users/role-review.service.js::requireCurrentUser; server/src/modules/users/role-review.service.js::requestStudentRole; server/src/middlewares/auth.middleware.js; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleRequest_Flow_auth_insert" sourceRef="RoleRequest_auth" targetRef="RoleRequest_insert" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/users/role-review.service.js::requireCurrentUser; server/src/modules/users/role-review.service.js::requestStudentRole; server/src/middlewares/auth.middleware.js; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleRequest_Flow_insert_result" sourceRef="RoleRequest_insert" targetRef="RoleRequest_result"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/users/role-review.service.js::requestStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleRequest_Flow_result_pending" sourceRef="RoleRequest_result" targetRef="RoleRequest_pending" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/users/role-review.service.js::transaction; server/src/modules/users/role-review.service.js::requestStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleRequest_Flow_result_duplicate" sourceRef="RoleRequest_result" targetRef="RoleRequest_duplicate" name="Ya existe pending"><bpmn:documentation>Confirmada. Condición: Ya existe pending. Evidencia: server/src/modules/users/role-review.service.js::transaction; server/src/modules/users/role-review.service.js::requestStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleRequest_Flow_result_error" sourceRef="RoleRequest_result" targetRef="RoleRequest_error" name="Otro fallo"><bpmn:documentation>Confirmada. Condición: Otro fallo. Evidencia: server/src/modules/users/role-review.service.js::transaction; server/src/modules/users/role-review.service.js::requestStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmn:process id="Process_RoleReview" name="Consulta y decisión de rol (peticiones independientes)" isExecutable="false">
+    <bpmn:documentation>GET y POST se autentican por separado. Rechazo académico es decisión exitosa rejected, distinta de rechazo HTTP. Auditoría de cola y decisión son transacciones distintas. Evidencia: server/src/modules/users/role-review.service.js; server/test/profile-and-role-review.integration.test.js. Por confirmar: gobierno operativo de términos/proveedores, alta administrativa, retención de evidencia y despliegue de outbox.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_RoleReview">
+      <bpmn:lane id="Lane_RoleReview_Actor" name="Administrador"><bpmn:documentation>Responsabilidad confirmada: server/src/modules/users/role-review.service.js; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation><bpmn:flowNodeRef>RoleReview_start</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_action</bpmn:flowNodeRef></bpmn:lane>
+      <bpmn:lane id="Lane_RoleReview_System" name="Sistema"><bpmn:documentation>Responsabilidad confirmada: server/src/modules/users/role-review.service.js; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation><bpmn:flowNodeRef>RoleReview_auth</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_denied</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_kind</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_queue</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_queueResult</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_queueEnd</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_queueError</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_locked</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_status</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_same</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_conflict</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_owner</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_forbidden</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_decision</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_approve</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_reject</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_effects</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_committed</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_success</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_error</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_outcome</bpmn:flowNodeRef><bpmn:flowNodeRef>RoleReview_rejection</bpmn:flowNodeRef></bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="RoleReview_start" name="GET cola / POST decisión">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:outgoing>RoleReview_Flow_start_action</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="RoleReview_action" name="Consultar o decidir con motivo">
+      <bpmn:documentation>Confirmada. Evidencia: client/src/features/dashboard/AdminDashboard.jsx::Review. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_start_action</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_action_auth</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="RoleReview_auth" name="¿Administrador activo/verificado?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/src/modules/users/role-review.service.js::decideStudentRole; server/src/middlewares/auth.middleware.js. Prueba: server/test/profile-and-role-review.integration.test.js. Input/page/IDs/motivo inválidos 400; identidad del actor viene de sesión, no cuerpo.</bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_action_auth</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_auth_denied</bpmn:outgoing>
+      <bpmn:outgoing>RoleReview_Flow_auth_kind</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="RoleReview_denied" name="Rechazo 400/401/403/404">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_auth_denied</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="RoleReview_kind" name="¿Consulta o decisión?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_auth_kind</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_kind_queue</bpmn:outgoing>
+      <bpmn:outgoing>RoleReview_Flow_kind_locked</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="RoleReview_queue" name="Leer pending; auditar cada evidencia; COMMIT">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests. Prueba: server/test/profile-and-role-review.integration.test.js. identity.role-request.evidence-read; no copiar referencia.</bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_kind_queue</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_queue_queueResult</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="RoleReview_queueResult" name="¿Auditoría confirmada?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::transaction; server/src/modules/users/role-review.service.js::listPendingRoleRequests. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_queue_queueResult</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_queueResult_queueEnd</bpmn:outgoing>
+      <bpmn:outgoing>RoleReview_Flow_queueResult_queueError</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="RoleReview_queueEnd" name="Éxito: cola privada (puede estar vacía)">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_queueResult_queueEnd</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="RoleReview_queueError" name="Error: rollback; sin revelar evidencia">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::transaction; server/src/modules/users/role-review.service.js::listPendingRoleRequests. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_queueResult_queueError</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="RoleReview_locked" name="BEGIN; bloquear usuarios por UUID y solicitud">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_kind_locked</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_locked_status</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="RoleReview_status" name="¿Estado y decisión?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_locked_status</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_status_same</bpmn:outgoing>
+      <bpmn:outgoing>RoleReview_Flow_status_conflict</bpmn:outgoing>
+      <bpmn:outgoing>RoleReview_Flow_status_owner</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="RoleReview_same" name="Éxito: misma decisión, sin nuevos efectos">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. Mismo outcome basta, aun si motivo/admin difieren; no se reescribe resultado.</bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_status_same</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="RoleReview_conflict" name="Rechazo 409: decisión conflictiva">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_status_conflict</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="RoleReview_owner" name="¿Solicitante sigue Egresado habilitado?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_status_owner</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_owner_forbidden</bpmn:outgoing>
+      <bpmn:outgoing>RoleReview_Flow_owner_decision</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="RoleReview_forbidden" name="Rechazo 403; rollback">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/src/modules/users/role-review.service.js::requireCurrentUser. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_owner_forbidden</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="RoleReview_decision" name="¿Aprobar o rechazar?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_owner_decision</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_decision_approve</bpmn:outgoing>
+      <bpmn:outgoing>RoleReview_Flow_decision_reject</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="RoleReview_approve" name="pending → approved; Egresado → Estudiante">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_decision_approve</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_approve_effects</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="RoleReview_reject" name="pending → rejected; conserva Egresado">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_decision_reject</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_reject_effects</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="RoleReview_effects" name="Auditoría + outbox; COMMIT">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/src/modules/users/role-review.service.js::transaction. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_approve_effects</bpmn:incoming>
+      <bpmn:incoming>RoleReview_Flow_reject_effects</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_effects_committed</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="RoleReview_committed" name="¿Efectos confirmados?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::transaction. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_effects_committed</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_committed_outcome</bpmn:outgoing>
+      <bpmn:outgoing>RoleReview_Flow_committed_error</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="RoleReview_success" name="Éxito: aprobado; rol Estudiante">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_outcome_success</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="RoleReview_error" name="Error 500: rollback rol/decisión/efectos">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::transaction. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_committed_error</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:dataObject id="Object_RoleReview_data"><bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation></bpmn:dataObject>
+    <bpmn:dataObjectReference id="RoleReview_data" name="Solicitud, motivo privado, audit y outbox" dataObjectRef="Object_RoleReview_data">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+    </bpmn:dataObjectReference>
+    <bpmn:exclusiveGateway id="RoleReview_outcome" name="¿Resultado confirmado?">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_committed_outcome</bpmn:incoming>
+      <bpmn:outgoing>RoleReview_Flow_outcome_success</bpmn:outgoing>
+      <bpmn:outgoing>RoleReview_Flow_outcome_rejection</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="RoleReview_rejection" name="Decisión rechazada; conserva Egresado">
+      <bpmn:documentation>Confirmada. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole. Prueba: server/test/profile-and-role-review.integration.test.js. </bpmn:documentation>
+      <bpmn:incoming>RoleReview_Flow_outcome_rejection</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="RoleReview_Flow_start_action" sourceRef="RoleReview_start" targetRef="RoleReview_action"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_action_auth" sourceRef="RoleReview_action" targetRef="RoleReview_auth"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: client/src/features/dashboard/AdminDashboard.jsx::Review; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_auth_denied" sourceRef="RoleReview_auth" targetRef="RoleReview_denied" name="No / entrada inválida / inexistente"><bpmn:documentation>Confirmada. Condición: No / entrada inválida / inexistente. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/src/modules/users/role-review.service.js::decideStudentRole; server/src/middlewares/auth.middleware.js; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_auth_kind" sourceRef="RoleReview_auth" targetRef="RoleReview_kind" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/src/modules/users/role-review.service.js::decideStudentRole; server/src/middlewares/auth.middleware.js; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_kind_queue" sourceRef="RoleReview_kind" targetRef="RoleReview_queue" name="GET"><bpmn:documentation>Confirmada. Condición: GET. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_queue_queueResult" sourceRef="RoleReview_queue" targetRef="RoleReview_queueResult"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_queueResult_queueEnd" sourceRef="RoleReview_queueResult" targetRef="RoleReview_queueEnd" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/users/role-review.service.js::transaction; server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_queueResult_queueError" sourceRef="RoleReview_queueResult" targetRef="RoleReview_queueError" name="No"><bpmn:documentation>Confirmada. Condición: No. Evidencia: server/src/modules/users/role-review.service.js::transaction; server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_kind_locked" sourceRef="RoleReview_kind" targetRef="RoleReview_locked" name="POST"><bpmn:documentation>Confirmada. Condición: POST. Evidencia: server/src/modules/users/role-review.service.js::listPendingRoleRequests; server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_locked_status" sourceRef="RoleReview_locked" targetRef="RoleReview_status"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_status_same" sourceRef="RoleReview_status" targetRef="RoleReview_same" name="Decidida: mismo outcome"><bpmn:documentation>Confirmada. Condición: Decidida: mismo outcome. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_status_conflict" sourceRef="RoleReview_status" targetRef="RoleReview_conflict" name="Decidida: outcome opuesto"><bpmn:documentation>Confirmada. Condición: Decidida: outcome opuesto. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_status_owner" sourceRef="RoleReview_status" targetRef="RoleReview_owner" name="pending"><bpmn:documentation>Confirmada. Condición: pending. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_owner_forbidden" sourceRef="RoleReview_owner" targetRef="RoleReview_forbidden" name="No"><bpmn:documentation>Confirmada. Condición: No. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_owner_decision" sourceRef="RoleReview_owner" targetRef="RoleReview_decision" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_decision_approve" sourceRef="RoleReview_decision" targetRef="RoleReview_approve" name="approve"><bpmn:documentation>Confirmada. Condición: approve. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_decision_reject" sourceRef="RoleReview_decision" targetRef="RoleReview_reject" name="reject"><bpmn:documentation>Confirmada. Condición: reject. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_approve_effects" sourceRef="RoleReview_approve" targetRef="RoleReview_effects"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_reject_effects" sourceRef="RoleReview_reject" targetRef="RoleReview_effects"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_effects_committed" sourceRef="RoleReview_effects" targetRef="RoleReview_committed"><bpmn:documentation>Confirmada. Condición: Continuar. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/src/modules/users/role-review.service.js::transaction; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_committed_outcome" sourceRef="RoleReview_committed" targetRef="RoleReview_outcome" name="Sí"><bpmn:documentation>Confirmada. Condición: Sí. Evidencia: server/src/modules/users/role-review.service.js::transaction; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_committed_error" sourceRef="RoleReview_committed" targetRef="RoleReview_error" name="Fallo auditoría/outbox"><bpmn:documentation>Confirmada. Condición: Fallo auditoría/outbox. Evidencia: server/src/modules/users/role-review.service.js::transaction; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_outcome_success" sourceRef="RoleReview_outcome" targetRef="RoleReview_success" name="approved"><bpmn:documentation>Confirmada. Condición: approved. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="RoleReview_Flow_outcome_rejection" sourceRef="RoleReview_outcome" targetRef="RoleReview_rejection" name="rejected"><bpmn:documentation>Confirmada. Condición: rejected. Evidencia: server/src/modules/users/role-review.service.js::decideStudentRole; server/test/profile-and-role-review.integration.test.js.</bpmn:documentation></bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmn:collaboration id="Collaboration_Registration">
+    <bpmn:participant id="Participant_Registration" name="Registro o reenvío de desafío" processRef="Process_Registration"/>
+    <bpmn:participant id="Participant_Confirmation" name="Confirmación de identidad" processRef="Process_Confirmation"/>
+    <bpmn:participant id="Participant_RoleRequest" name="Solicitud de condición Estudiante" processRef="Process_RoleRequest"/>
+    <bpmn:participant id="Participant_RoleReview" name="Consulta y decisión de rol (peticiones independientes)" processRef="Process_RoleReview"/>
+  </bpmn:collaboration>
+  <bpmndi:BPMNDiagram id="Diagram_Registration"><bpmndi:BPMNPlane id="Plane_Registration" bpmnElement="Collaboration_Registration">
+    <bpmndi:BPMNShape id="Shape_Participant_Registration" bpmnElement="Participant_Registration" isHorizontal="true"><dc:Bounds x="40" y="40" width="3690" height="930"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Lane_Registration_Actor" bpmnElement="Lane_Registration_Actor" isHorizontal="true"><dc:Bounds x="70" y="40" width="3660" height="190"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Lane_Registration_System" bpmnElement="Lane_Registration_System" isHorizontal="true"><dc:Bounds x="70" y="230" width="3660" height="740"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_start" bpmnElement="Registration_start"><dc:Bounds x="197" y="105" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="129" y="149" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_input" bpmnElement="Registration_input"><dc:Bounds x="400" y="105" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_valid" bpmnElement="Registration_valid" isMarkerVisible="true"><dc:Bounds x="730" y="325" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="662" y="255" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_bad" bpmnElement="Registration_bad"><dc:Bounds x="737" y="545" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="669" y="589" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_kind" bpmnElement="Registration_kind" isMarkerVisible="true"><dc:Bounds x="1000" y="325" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="932" y="255" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_insert" bpmnElement="Registration_insert"><dc:Bounds x="1210" y="325" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_insertResult" bpmnElement="Registration_insertResult" isMarkerVisible="true"><dc:Bounds x="1540" y="325" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="1472" y="255" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_dup" bpmnElement="Registration_dup"><dc:Bounds x="1547" y="545" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="1479" y="589" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_dbError" bpmnElement="Registration_dbError"><dc:Bounds x="1547" y="765" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="1479" y="809" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_issue" bpmnElement="Registration_issue"><dc:Bounds x="1750" y="325" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_eligible" bpmnElement="Registration_eligible" isMarkerVisible="true"><dc:Bounds x="2080" y="325" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="2012" y="255" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_invalid" bpmnElement="Registration_invalid"><dc:Bounds x="2087" y="545" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="2019" y="589" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_provider" bpmnElement="Registration_provider"><dc:Bounds x="2290" y="325" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_available" bpmnElement="Registration_available" isMarkerVisible="true"><dc:Bounds x="2620" y="325" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="2552" y="255" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_unavailable" bpmnElement="Registration_unavailable"><dc:Bounds x="2627" y="545" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="2559" y="589" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_save" bpmnElement="Registration_save"><dc:Bounds x="2830" y="325" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_saved" bpmnElement="Registration_saved" isMarkerVisible="true"><dc:Bounds x="3160" y="325" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="3092" y="255" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_pending" bpmnElement="Registration_pending"><dc:Bounds x="3437" y="325" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="3369" y="369" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_error" bpmnElement="Registration_error"><dc:Bounds x="3167" y="545" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="3099" y="589" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Registration_data" bpmnElement="Registration_data"><dc:Bounds x="2290" y="765" width="36" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="2222" y="823" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_start_input" bpmnElement="Registration_Flow_start_input"><di:waypoint x="233" y="123"/><di:waypoint x="375" y="123"/><di:waypoint x="375" y="150"/><di:waypoint x="400" y="150"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_input_valid" bpmnElement="Registration_Flow_input_valid"><di:waypoint x="575" y="150"/><di:waypoint x="632" y="150"/><di:waypoint x="632" y="257"/><di:waypoint x="755" y="257"/><di:waypoint x="755" y="325"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_valid_bad" bpmnElement="Registration_Flow_valid_bad"><di:waypoint x="780" y="350"/><di:waypoint x="892" y="350"/><di:waypoint x="892" y="464"/><di:waypoint x="755" y="464"/><di:waypoint x="755" y="545"/><bpmndi:BPMNLabel><dc:Bounds x="897" y="445" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_valid_kind" bpmnElement="Registration_Flow_valid_kind"><di:waypoint x="780" y="350"/><di:waypoint x="975" y="350"/><di:waypoint x="975" y="350"/><di:waypoint x="1000" y="350"/><bpmndi:BPMNLabel><dc:Bounds x="784" y="312" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_kind_insert" bpmnElement="Registration_Flow_kind_insert"><di:waypoint x="1050" y="350"/><di:waypoint x="1185" y="350"/><di:waypoint x="1185" y="370"/><di:waypoint x="1210" y="370"/><bpmndi:BPMNLabel><dc:Bounds x="1054" y="312" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_kind_issue" bpmnElement="Registration_Flow_kind_issue"><di:waypoint x="1025" y="325"/><di:waypoint x="1025" y="213"/><di:waypoint x="1837.5" y="213"/><di:waypoint x="1837.5" y="325"/><bpmndi:BPMNLabel><dc:Bounds x="1375" y="178" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_insert_insertResult" bpmnElement="Registration_Flow_insert_insertResult"><di:waypoint x="1385" y="370"/><di:waypoint x="1515" y="370"/><di:waypoint x="1515" y="350"/><di:waypoint x="1540" y="350"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_insertResult_dup" bpmnElement="Registration_Flow_insertResult_dup"><di:waypoint x="1590" y="350"/><di:waypoint x="1712" y="350"/><di:waypoint x="1712" y="477"/><di:waypoint x="1565" y="477"/><di:waypoint x="1565" y="545"/><bpmndi:BPMNLabel><dc:Bounds x="1717" y="420" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_insertResult_dbError" bpmnElement="Registration_Flow_insertResult_dbError"><di:waypoint x="1590" y="350"/><di:waypoint x="1702" y="350"/><di:waypoint x="1702" y="684"/><di:waypoint x="1565" y="684"/><di:waypoint x="1565" y="765"/><bpmndi:BPMNLabel><dc:Bounds x="1707" y="445" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_insertResult_issue" bpmnElement="Registration_Flow_insertResult_issue"><di:waypoint x="1590" y="350"/><di:waypoint x="1725" y="350"/><di:waypoint x="1725" y="370"/><di:waypoint x="1750" y="370"/><bpmndi:BPMNLabel><dc:Bounds x="1594" y="312" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_issue_eligible" bpmnElement="Registration_Flow_issue_eligible"><di:waypoint x="1925" y="370"/><di:waypoint x="2055" y="370"/><di:waypoint x="2055" y="350"/><di:waypoint x="2080" y="350"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_eligible_invalid" bpmnElement="Registration_Flow_eligible_invalid"><di:waypoint x="2130" y="350"/><di:waypoint x="2242" y="350"/><di:waypoint x="2242" y="464"/><di:waypoint x="2105" y="464"/><di:waypoint x="2105" y="545"/><bpmndi:BPMNLabel><dc:Bounds x="2247" y="445" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_eligible_provider" bpmnElement="Registration_Flow_eligible_provider"><di:waypoint x="2130" y="350"/><di:waypoint x="2265" y="350"/><di:waypoint x="2265" y="370"/><di:waypoint x="2290" y="370"/><bpmndi:BPMNLabel><dc:Bounds x="2134" y="312" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_provider_available" bpmnElement="Registration_Flow_provider_available"><di:waypoint x="2465" y="370"/><di:waypoint x="2595" y="370"/><di:waypoint x="2595" y="350"/><di:waypoint x="2620" y="350"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_available_unavailable" bpmnElement="Registration_Flow_available_unavailable"><di:waypoint x="2670" y="350"/><di:waypoint x="2782" y="350"/><di:waypoint x="2782" y="464"/><di:waypoint x="2645" y="464"/><di:waypoint x="2645" y="545"/><bpmndi:BPMNLabel><dc:Bounds x="2787" y="445" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_available_save" bpmnElement="Registration_Flow_available_save"><di:waypoint x="2670" y="350"/><di:waypoint x="2805" y="350"/><di:waypoint x="2805" y="370"/><di:waypoint x="2830" y="370"/><bpmndi:BPMNLabel><dc:Bounds x="2674" y="312" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_save_saved" bpmnElement="Registration_Flow_save_saved"><di:waypoint x="3005" y="370"/><di:waypoint x="3135" y="370"/><di:waypoint x="3135" y="350"/><di:waypoint x="3160" y="350"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_saved_pending" bpmnElement="Registration_Flow_saved_pending"><di:waypoint x="3210" y="350"/><di:waypoint x="3412" y="350"/><di:waypoint x="3412" y="343"/><di:waypoint x="3437" y="343"/><bpmndi:BPMNLabel><dc:Bounds x="3214" y="312" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Registration_Flow_saved_error" bpmnElement="Registration_Flow_saved_error"><di:waypoint x="3210" y="350"/><di:waypoint x="3342" y="350"/><di:waypoint x="3342" y="490"/><di:waypoint x="3185" y="490"/><di:waypoint x="3185" y="545"/><bpmndi:BPMNLabel><dc:Bounds x="3347" y="395" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNShape id="Shape_Participant_Confirmation" bpmnElement="Participant_Confirmation" isHorizontal="true"><dc:Bounds x="40" y="1070" width="2880" height="930"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Lane_Confirmation_Actor" bpmnElement="Lane_Confirmation_Actor" isHorizontal="true"><dc:Bounds x="70" y="1070" width="2850" height="190"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Lane_Confirmation_System" bpmnElement="Lane_Confirmation_System" isHorizontal="true"><dc:Bounds x="70" y="1260" width="2850" height="740"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_start" bpmnElement="Confirmation_start"><dc:Bounds x="197" y="1135" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="129" y="1179" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_code" bpmnElement="Confirmation_code"><dc:Bounds x="400" y="1135" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_checks" bpmnElement="Confirmation_checks" isMarkerVisible="true"><dc:Bounds x="730" y="1355" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="662" y="1285" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_invalid" bpmnElement="Confirmation_invalid"><dc:Bounds x="737" y="1575" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="669" y="1619" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_expiry" bpmnElement="Confirmation_expiry" isMarkerVisible="true"><dc:Bounds x="1000" y="1355" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="932" y="1285" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_expire" bpmnElement="Confirmation_expire"><dc:Bounds x="940" y="1575" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_rejected" bpmnElement="Confirmation_rejected"><dc:Bounds x="1277" y="1575" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="1209" y="1619" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_verify" bpmnElement="Confirmation_verify"><dc:Bounds x="1210" y="1355" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_result" bpmnElement="Confirmation_result" isMarkerVisible="true"><dc:Bounds x="1540" y="1355" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="1472" y="1285" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_outage" bpmnElement="Confirmation_outage"><dc:Bounds x="1547" y="1795" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="1479" y="1839" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_attempt" bpmnElement="Confirmation_attempt"><dc:Bounds x="1480" y="1575" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_wrong" bpmnElement="Confirmation_wrong"><dc:Bounds x="1817" y="1575" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="1749" y="1619" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_again" bpmnElement="Confirmation_again" isMarkerVisible="true"><dc:Bounds x="1810" y="1355" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="1742" y="1285" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_activate" bpmnElement="Confirmation_activate"><dc:Bounds x="2020" y="1355" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_commit" bpmnElement="Confirmation_commit" isMarkerVisible="true"><dc:Bounds x="2350" y="1355" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="2282" y="1285" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_error" bpmnElement="Confirmation_error"><dc:Bounds x="2357" y="1575" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="2289" y="1619" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_success" bpmnElement="Confirmation_success"><dc:Bounds x="2627" y="1355" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="2559" y="1399" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Confirmation_data" bpmnElement="Confirmation_data"><dc:Bounds x="2020" y="1795" width="36" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="1952" y="1853" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_start_code" bpmnElement="Confirmation_Flow_start_code"><di:waypoint x="233" y="1153"/><di:waypoint x="375" y="1153"/><di:waypoint x="375" y="1180"/><di:waypoint x="400" y="1180"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_code_checks" bpmnElement="Confirmation_Flow_code_checks"><di:waypoint x="575" y="1180"/><di:waypoint x="632" y="1180"/><di:waypoint x="632" y="1287"/><di:waypoint x="755" y="1287"/><di:waypoint x="755" y="1355"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_checks_invalid" bpmnElement="Confirmation_Flow_checks_invalid"><di:waypoint x="780" y="1380"/><di:waypoint x="892" y="1380"/><di:waypoint x="892" y="1494"/><di:waypoint x="755" y="1494"/><di:waypoint x="755" y="1575"/><bpmndi:BPMNLabel><dc:Bounds x="897" y="1475" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_checks_expiry" bpmnElement="Confirmation_Flow_checks_expiry"><di:waypoint x="780" y="1380"/><di:waypoint x="975" y="1380"/><di:waypoint x="975" y="1380"/><di:waypoint x="1000" y="1380"/><bpmndi:BPMNLabel><dc:Bounds x="784" y="1342" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_expiry_expire" bpmnElement="Confirmation_Flow_expiry_expire"><di:waypoint x="1050" y="1380"/><di:waypoint x="1172" y="1380"/><di:waypoint x="1172" y="1507"/><di:waypoint x="1027.5" y="1507"/><di:waypoint x="1027.5" y="1575"/><bpmndi:BPMNLabel><dc:Bounds x="1177" y="1450" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_expiry_verify" bpmnElement="Confirmation_Flow_expiry_verify"><di:waypoint x="1050" y="1380"/><di:waypoint x="1185" y="1380"/><di:waypoint x="1185" y="1400"/><di:waypoint x="1210" y="1400"/><bpmndi:BPMNLabel><dc:Bounds x="1054" y="1342" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_expire_rejected" bpmnElement="Confirmation_Flow_expire_rejected"><di:waypoint x="1115" y="1620"/><di:waypoint x="1252" y="1620"/><di:waypoint x="1252" y="1593"/><di:waypoint x="1277" y="1593"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_verify_result" bpmnElement="Confirmation_Flow_verify_result"><di:waypoint x="1385" y="1400"/><di:waypoint x="1515" y="1400"/><di:waypoint x="1515" y="1380"/><di:waypoint x="1540" y="1380"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_result_outage" bpmnElement="Confirmation_Flow_result_outage"><di:waypoint x="1590" y="1380"/><di:waypoint x="1702" y="1380"/><di:waypoint x="1702" y="1714"/><di:waypoint x="1565" y="1714"/><di:waypoint x="1565" y="1795"/><bpmndi:BPMNLabel><dc:Bounds x="1707" y="1475" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_result_attempt" bpmnElement="Confirmation_Flow_result_attempt"><di:waypoint x="1590" y="1380"/><di:waypoint x="1722" y="1380"/><di:waypoint x="1722" y="1520"/><di:waypoint x="1567.5" y="1520"/><di:waypoint x="1567.5" y="1575"/><bpmndi:BPMNLabel><dc:Bounds x="1727" y="1425" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_attempt_wrong" bpmnElement="Confirmation_Flow_attempt_wrong"><di:waypoint x="1655" y="1620"/><di:waypoint x="1792" y="1620"/><di:waypoint x="1792" y="1593"/><di:waypoint x="1817" y="1593"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_result_again" bpmnElement="Confirmation_Flow_result_again"><di:waypoint x="1590" y="1380"/><di:waypoint x="1785" y="1380"/><di:waypoint x="1785" y="1380"/><di:waypoint x="1810" y="1380"/><bpmndi:BPMNLabel><dc:Bounds x="1594" y="1342" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_again_expire" bpmnElement="Confirmation_Flow_again_expire"><di:waypoint x="1860" y="1380"/><di:waypoint x="1992" y="1380"/><di:waypoint x="1992" y="1520"/><di:waypoint x="1027.5" y="1520"/><di:waypoint x="1027.5" y="1575"/><bpmndi:BPMNLabel><dc:Bounds x="1997" y="1425" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_again_activate" bpmnElement="Confirmation_Flow_again_activate"><di:waypoint x="1860" y="1380"/><di:waypoint x="1995" y="1380"/><di:waypoint x="1995" y="1400"/><di:waypoint x="2020" y="1400"/><bpmndi:BPMNLabel><dc:Bounds x="1864" y="1342" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_activate_commit" bpmnElement="Confirmation_Flow_activate_commit"><di:waypoint x="2195" y="1400"/><di:waypoint x="2325" y="1400"/><di:waypoint x="2325" y="1380"/><di:waypoint x="2350" y="1380"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_commit_success" bpmnElement="Confirmation_Flow_commit_success"><di:waypoint x="2400" y="1380"/><di:waypoint x="2602" y="1380"/><di:waypoint x="2602" y="1373"/><di:waypoint x="2627" y="1373"/><bpmndi:BPMNLabel><dc:Bounds x="2404" y="1342" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_Confirmation_Flow_commit_error" bpmnElement="Confirmation_Flow_commit_error"><di:waypoint x="2400" y="1380"/><di:waypoint x="2522" y="1380"/><di:waypoint x="2522" y="1507"/><di:waypoint x="2375" y="1507"/><di:waypoint x="2375" y="1575"/><bpmndi:BPMNLabel><dc:Bounds x="2527" y="1450" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNShape id="Shape_Participant_RoleRequest" bpmnElement="Participant_RoleRequest" isHorizontal="true"><dc:Bounds x="40" y="2100" width="2070" height="930"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Lane_RoleRequest_Actor" bpmnElement="Lane_RoleRequest_Actor" isHorizontal="true"><dc:Bounds x="70" y="2100" width="2040" height="190"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Lane_RoleRequest_System" bpmnElement="Lane_RoleRequest_System" isHorizontal="true"><dc:Bounds x="70" y="2290" width="2040" height="740"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleRequest_start" bpmnElement="RoleRequest_start"><dc:Bounds x="197" y="2165" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="129" y="2209" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleRequest_evidence" bpmnElement="RoleRequest_evidence"><dc:Bounds x="400" y="2165" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleRequest_validate" bpmnElement="RoleRequest_validate" isMarkerVisible="true"><dc:Bounds x="730" y="2385" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="662" y="2315" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleRequest_invalid" bpmnElement="RoleRequest_invalid"><dc:Bounds x="737" y="2605" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="669" y="2649" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleRequest_auth" bpmnElement="RoleRequest_auth" isMarkerVisible="true"><dc:Bounds x="1000" y="2385" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="932" y="2315" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleRequest_denied" bpmnElement="RoleRequest_denied"><dc:Bounds x="1007" y="2605" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="939" y="2649" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleRequest_insert" bpmnElement="RoleRequest_insert"><dc:Bounds x="1210" y="2385" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleRequest_result" bpmnElement="RoleRequest_result" isMarkerVisible="true"><dc:Bounds x="1540" y="2385" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="1472" y="2315" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleRequest_pending" bpmnElement="RoleRequest_pending"><dc:Bounds x="1817" y="2385" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="1749" y="2429" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleRequest_duplicate" bpmnElement="RoleRequest_duplicate"><dc:Bounds x="1547" y="2605" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="1479" y="2649" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleRequest_error" bpmnElement="RoleRequest_error"><dc:Bounds x="1547" y="2825" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="1479" y="2869" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleRequest_data" bpmnElement="RoleRequest_data"><dc:Bounds x="1210" y="2825" width="36" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="1142" y="2883" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNEdge id="Edge_RoleRequest_Flow_start_evidence" bpmnElement="RoleRequest_Flow_start_evidence"><di:waypoint x="233" y="2183"/><di:waypoint x="375" y="2183"/><di:waypoint x="375" y="2210"/><di:waypoint x="400" y="2210"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleRequest_Flow_evidence_validate" bpmnElement="RoleRequest_Flow_evidence_validate"><di:waypoint x="575" y="2210"/><di:waypoint x="632" y="2210"/><di:waypoint x="632" y="2317"/><di:waypoint x="755" y="2317"/><di:waypoint x="755" y="2385"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleRequest_Flow_validate_invalid" bpmnElement="RoleRequest_Flow_validate_invalid"><di:waypoint x="780" y="2410"/><di:waypoint x="892" y="2410"/><di:waypoint x="892" y="2524"/><di:waypoint x="755" y="2524"/><di:waypoint x="755" y="2605"/><bpmndi:BPMNLabel><dc:Bounds x="897" y="2505" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleRequest_Flow_validate_auth" bpmnElement="RoleRequest_Flow_validate_auth"><di:waypoint x="780" y="2410"/><di:waypoint x="975" y="2410"/><di:waypoint x="975" y="2410"/><di:waypoint x="1000" y="2410"/><bpmndi:BPMNLabel><dc:Bounds x="784" y="2372" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleRequest_Flow_auth_denied" bpmnElement="RoleRequest_Flow_auth_denied"><di:waypoint x="1050" y="2410"/><di:waypoint x="1172" y="2410"/><di:waypoint x="1172" y="2537"/><di:waypoint x="1025" y="2537"/><di:waypoint x="1025" y="2605"/><bpmndi:BPMNLabel><dc:Bounds x="1177" y="2480" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleRequest_Flow_auth_insert" bpmnElement="RoleRequest_Flow_auth_insert"><di:waypoint x="1050" y="2410"/><di:waypoint x="1185" y="2410"/><di:waypoint x="1185" y="2430"/><di:waypoint x="1210" y="2430"/><bpmndi:BPMNLabel><dc:Bounds x="1054" y="2372" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleRequest_Flow_insert_result" bpmnElement="RoleRequest_Flow_insert_result"><di:waypoint x="1385" y="2430"/><di:waypoint x="1515" y="2430"/><di:waypoint x="1515" y="2410"/><di:waypoint x="1540" y="2410"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleRequest_Flow_result_pending" bpmnElement="RoleRequest_Flow_result_pending"><di:waypoint x="1590" y="2410"/><di:waypoint x="1792" y="2410"/><di:waypoint x="1792" y="2403"/><di:waypoint x="1817" y="2403"/><bpmndi:BPMNLabel><dc:Bounds x="1594" y="2372" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleRequest_Flow_result_duplicate" bpmnElement="RoleRequest_Flow_result_duplicate"><di:waypoint x="1590" y="2410"/><di:waypoint x="1702" y="2410"/><di:waypoint x="1702" y="2524"/><di:waypoint x="1565" y="2524"/><di:waypoint x="1565" y="2605"/><bpmndi:BPMNLabel><dc:Bounds x="1707" y="2505" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleRequest_Flow_result_error" bpmnElement="RoleRequest_Flow_result_error"><di:waypoint x="1590" y="2410"/><di:waypoint x="1722" y="2410"/><di:waypoint x="1722" y="2770"/><di:waypoint x="1565" y="2770"/><di:waypoint x="1565" y="2825"/><bpmndi:BPMNLabel><dc:Bounds x="1727" y="2455" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNShape id="Shape_Participant_RoleReview" bpmnElement="Participant_RoleReview" isHorizontal="true"><dc:Bounds x="40" y="3130" width="3690" height="930"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Lane_RoleReview_Actor" bpmnElement="Lane_RoleReview_Actor" isHorizontal="true"><dc:Bounds x="70" y="3130" width="3660" height="190"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_Lane_RoleReview_System" bpmnElement="Lane_RoleReview_System" isHorizontal="true"><dc:Bounds x="70" y="3320" width="3660" height="740"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_start" bpmnElement="RoleReview_start"><dc:Bounds x="197" y="3195" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="129" y="3239" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_action" bpmnElement="RoleReview_action"><dc:Bounds x="400" y="3195" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_auth" bpmnElement="RoleReview_auth" isMarkerVisible="true"><dc:Bounds x="730" y="3415" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="662" y="3345" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_denied" bpmnElement="RoleReview_denied"><dc:Bounds x="737" y="3635" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="669" y="3679" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_kind" bpmnElement="RoleReview_kind" isMarkerVisible="true"><dc:Bounds x="1000" y="3415" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="932" y="3345" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_queue" bpmnElement="RoleReview_queue"><dc:Bounds x="1210" y="3635" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_queueResult" bpmnElement="RoleReview_queueResult" isMarkerVisible="true"><dc:Bounds x="1540" y="3635" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="1472" y="3565" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_queueEnd" bpmnElement="RoleReview_queueEnd"><dc:Bounds x="1817" y="3635" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="1749" y="3679" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_queueError" bpmnElement="RoleReview_queueError"><dc:Bounds x="1547" y="3855" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="1479" y="3899" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_locked" bpmnElement="RoleReview_locked"><dc:Bounds x="1210" y="3415" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_status" bpmnElement="RoleReview_status" isMarkerVisible="true"><dc:Bounds x="1540" y="3415" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="1472" y="3345" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_same" bpmnElement="RoleReview_same"><dc:Bounds x="1817" y="3855" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="1749" y="3899" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_conflict" bpmnElement="RoleReview_conflict"><dc:Bounds x="2087" y="3855" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="2019" y="3899" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_owner" bpmnElement="RoleReview_owner" isMarkerVisible="true"><dc:Bounds x="1810" y="3415" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="1742" y="3345" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_forbidden" bpmnElement="RoleReview_forbidden"><dc:Bounds x="2087" y="3635" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="2019" y="3679" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_decision" bpmnElement="RoleReview_decision" isMarkerVisible="true"><dc:Bounds x="2080" y="3415" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="2012" y="3345" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_approve" bpmnElement="RoleReview_approve"><dc:Bounds x="2290" y="3415" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_reject" bpmnElement="RoleReview_reject"><dc:Bounds x="2290" y="3635" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_effects" bpmnElement="RoleReview_effects"><dc:Bounds x="2560" y="3415" width="175" height="90"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_committed" bpmnElement="RoleReview_committed" isMarkerVisible="true"><dc:Bounds x="2890" y="3415" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="2822" y="3345" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_success" bpmnElement="RoleReview_success"><dc:Bounds x="3437" y="3415" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="3369" y="3459" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_error" bpmnElement="RoleReview_error"><dc:Bounds x="2897" y="3635" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="2829" y="3679" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_data" bpmnElement="RoleReview_data"><dc:Bounds x="2560" y="3855" width="36" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="2492" y="3913" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_outcome" bpmnElement="RoleReview_outcome" isMarkerVisible="true"><dc:Bounds x="3160" y="3415" width="50" height="50"/><bpmndi:BPMNLabel><dc:Bounds x="3092" y="3345" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Shape_RoleReview_rejection" bpmnElement="RoleReview_rejection"><dc:Bounds x="3437" y="3635" width="36" height="36"/><bpmndi:BPMNLabel><dc:Bounds x="3369" y="3679" width="180" height="62"/></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_start_action" bpmnElement="RoleReview_Flow_start_action"><di:waypoint x="233" y="3213"/><di:waypoint x="375" y="3213"/><di:waypoint x="375" y="3240"/><di:waypoint x="400" y="3240"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_action_auth" bpmnElement="RoleReview_Flow_action_auth"><di:waypoint x="575" y="3240"/><di:waypoint x="632" y="3240"/><di:waypoint x="632" y="3347"/><di:waypoint x="755" y="3347"/><di:waypoint x="755" y="3415"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_auth_denied" bpmnElement="RoleReview_Flow_auth_denied"><di:waypoint x="780" y="3440"/><di:waypoint x="892" y="3440"/><di:waypoint x="892" y="3554"/><di:waypoint x="755" y="3554"/><di:waypoint x="755" y="3635"/><bpmndi:BPMNLabel><dc:Bounds x="897" y="3535" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_auth_kind" bpmnElement="RoleReview_Flow_auth_kind"><di:waypoint x="780" y="3440"/><di:waypoint x="975" y="3440"/><di:waypoint x="975" y="3440"/><di:waypoint x="1000" y="3440"/><bpmndi:BPMNLabel><dc:Bounds x="784" y="3402" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_kind_queue" bpmnElement="RoleReview_Flow_kind_queue"><di:waypoint x="1050" y="3440"/><di:waypoint x="1172" y="3440"/><di:waypoint x="1172" y="3567"/><di:waypoint x="1297.5" y="3567"/><di:waypoint x="1297.5" y="3635"/><bpmndi:BPMNLabel><dc:Bounds x="1177" y="3510" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_queue_queueResult" bpmnElement="RoleReview_Flow_queue_queueResult"><di:waypoint x="1385" y="3680"/><di:waypoint x="1515" y="3680"/><di:waypoint x="1515" y="3660"/><di:waypoint x="1540" y="3660"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_queueResult_queueEnd" bpmnElement="RoleReview_Flow_queueResult_queueEnd"><di:waypoint x="1590" y="3660"/><di:waypoint x="1792" y="3660"/><di:waypoint x="1792" y="3653"/><di:waypoint x="1817" y="3653"/><bpmndi:BPMNLabel><dc:Bounds x="1594" y="3622" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_queueResult_queueError" bpmnElement="RoleReview_Flow_queueResult_queueError"><di:waypoint x="1590" y="3660"/><di:waypoint x="1712" y="3660"/><di:waypoint x="1712" y="3787"/><di:waypoint x="1565" y="3787"/><di:waypoint x="1565" y="3855"/><bpmndi:BPMNLabel><dc:Bounds x="1717" y="3730" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_kind_locked" bpmnElement="RoleReview_Flow_kind_locked"><di:waypoint x="1050" y="3440"/><di:waypoint x="1185" y="3440"/><di:waypoint x="1185" y="3460"/><di:waypoint x="1210" y="3460"/><bpmndi:BPMNLabel><dc:Bounds x="1054" y="3402" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_locked_status" bpmnElement="RoleReview_Flow_locked_status"><di:waypoint x="1385" y="3460"/><di:waypoint x="1515" y="3460"/><di:waypoint x="1515" y="3440"/><di:waypoint x="1540" y="3440"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_status_same" bpmnElement="RoleReview_Flow_status_same"><di:waypoint x="1590" y="3440"/><di:waypoint x="1712" y="3440"/><di:waypoint x="1712" y="3787"/><di:waypoint x="1835" y="3787"/><di:waypoint x="1835" y="3855"/><bpmndi:BPMNLabel><dc:Bounds x="1717" y="3510" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_status_conflict" bpmnElement="RoleReview_Flow_status_conflict"><di:waypoint x="1590" y="3440"/><di:waypoint x="1702" y="3440"/><di:waypoint x="1702" y="3774"/><di:waypoint x="2105" y="3774"/><di:waypoint x="2105" y="3855"/><bpmndi:BPMNLabel><dc:Bounds x="1707" y="3535" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_status_owner" bpmnElement="RoleReview_Flow_status_owner"><di:waypoint x="1590" y="3440"/><di:waypoint x="1785" y="3440"/><di:waypoint x="1785" y="3440"/><di:waypoint x="1810" y="3440"/><bpmndi:BPMNLabel><dc:Bounds x="1594" y="3402" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_owner_forbidden" bpmnElement="RoleReview_Flow_owner_forbidden"><di:waypoint x="1860" y="3440"/><di:waypoint x="1982" y="3440"/><di:waypoint x="1982" y="3567"/><di:waypoint x="2105" y="3567"/><di:waypoint x="2105" y="3635"/><bpmndi:BPMNLabel><dc:Bounds x="1987" y="3510" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_owner_decision" bpmnElement="RoleReview_Flow_owner_decision"><di:waypoint x="1860" y="3440"/><di:waypoint x="2055" y="3440"/><di:waypoint x="2055" y="3440"/><di:waypoint x="2080" y="3440"/><bpmndi:BPMNLabel><dc:Bounds x="1864" y="3402" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_decision_approve" bpmnElement="RoleReview_Flow_decision_approve"><di:waypoint x="2130" y="3440"/><di:waypoint x="2265" y="3440"/><di:waypoint x="2265" y="3460"/><di:waypoint x="2290" y="3460"/><bpmndi:BPMNLabel><dc:Bounds x="2134" y="3402" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_decision_reject" bpmnElement="RoleReview_Flow_decision_reject"><di:waypoint x="2130" y="3440"/><di:waypoint x="2252" y="3440"/><di:waypoint x="2252" y="3567"/><di:waypoint x="2377.5" y="3567"/><di:waypoint x="2377.5" y="3635"/><bpmndi:BPMNLabel><dc:Bounds x="2257" y="3510" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_approve_effects" bpmnElement="RoleReview_Flow_approve_effects"><di:waypoint x="2465" y="3460"/><di:waypoint x="2535" y="3460"/><di:waypoint x="2535" y="3460"/><di:waypoint x="2560" y="3460"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_reject_effects" bpmnElement="RoleReview_Flow_reject_effects"><di:waypoint x="2377.5" y="3635"/><di:waypoint x="2377.5" y="3550"/><di:waypoint x="2525" y="3550"/><di:waypoint x="2525" y="3460"/><di:waypoint x="2560" y="3460"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_effects_committed" bpmnElement="RoleReview_Flow_effects_committed"><di:waypoint x="2735" y="3460"/><di:waypoint x="2865" y="3460"/><di:waypoint x="2865" y="3440"/><di:waypoint x="2890" y="3440"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_committed_outcome" bpmnElement="RoleReview_Flow_committed_outcome"><di:waypoint x="2940" y="3440"/><di:waypoint x="3135" y="3440"/><di:waypoint x="3135" y="3440"/><di:waypoint x="3160" y="3440"/><bpmndi:BPMNLabel><dc:Bounds x="2944" y="3402" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_committed_error" bpmnElement="RoleReview_Flow_committed_error"><di:waypoint x="2940" y="3440"/><di:waypoint x="3072" y="3440"/><di:waypoint x="3072" y="3580"/><di:waypoint x="2915" y="3580"/><di:waypoint x="2915" y="3635"/><bpmndi:BPMNLabel><dc:Bounds x="3077" y="3485" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_outcome_success" bpmnElement="RoleReview_Flow_outcome_success"><di:waypoint x="3210" y="3440"/><di:waypoint x="3412" y="3440"/><di:waypoint x="3412" y="3433"/><di:waypoint x="3437" y="3433"/><bpmndi:BPMNLabel><dc:Bounds x="3214" y="3402" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Edge_RoleReview_Flow_outcome_rejection" bpmnElement="RoleReview_Flow_outcome_rejection"><di:waypoint x="3210" y="3440"/><di:waypoint x="3322" y="3440"/><di:waypoint x="3322" y="3554"/><di:waypoint x="3455" y="3554"/><di:waypoint x="3455" y="3635"/><bpmndi:BPMNLabel><dc:Bounds x="3327" y="3535" width="150" height="42"/></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>

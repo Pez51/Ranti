@@ -154,7 +154,7 @@ git diff --check
 
 El script PostgreSQL crea una instancia temporal con puerto libre, ejecuta la suite y limpia esa instancia; no usa bases existentes. Otra instalación: `-PostgresBin 'C:\Program Files\PostgreSQL\16\bin'`. Validación/render en [BPMN](docs/bpmn/README.md).
 
-Resultados frescos de Fase 2, 2026-09-30:
+Resultados frescos de Fase 2, 2026-10-01:
 
 | Comando | Resultado |
 |---|---|
@@ -167,7 +167,7 @@ Resultados frescos de Fase 2, 2026-09-30:
 | Render BPMN | Ambos SVG generados y analizados como XML; vistas PNG derivadas inspeccionadas. |
 | `git diff --check` | Sin errores. |
 
-En una ejecución intermedia se observó un fallo intermitente previo en `outbox.integration.test.js`, `does not count a stale handler as successfully persisted` (contador failed 1 en lugar de 0). La ejecución completa final pasó. Las suites de outbox/identidad/rol comparten la base desechable y outbox trunca/reclama eventos sin aislar productores de otras suites; queda pendiente aislarlas para eliminar esa interferencia potencial.
+La interferencia intermitente entre las suites de outbox, identidad y revisión de rol quedó corregida: cada suite posee una base privada dentro del clúster temporal mediante `server/test/helpers/disposable-database.js`. Esto impide que un `TRUNCATE` o un worker de una suite reclame eventos de otra. La verificación posterior pasó 403/403 en paralelo.
 
 No hay proveedor institucional real, carga binaria de evidencia ni almacén privado de objetos. Por confirmar: alta operativa de administradores, gobierno de términos/proveedores, retención de evidencia y despliegue del worker.
 

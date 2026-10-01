@@ -1,6 +1,6 @@
 # Revisión del informe — estado verificado de Fase 2
 
-Actualizado el 2026-09-30 sobre código aprobado hasta `6059ff1`. Esta matriz sustituye afirmaciones históricas del diagnóstico inicial, conservado en Git. Código/pruebas prevalecen sobre Graphify desactualizado. [Comandos y operación](../README.md); [BPMN y ledger](bpmn/README.md).
+Actualizado el 2026-10-01 sobre código aprobado hasta `2c1ac93`. Esta matriz sustituye afirmaciones históricas del diagnóstico inicial, conservado en Git. Código/pruebas prevalecen sobre Graphify desactualizado. [Comandos y operación](../README.md); [BPMN y ledger](bpmn/README.md).
 
 ## Alcance implementado
 
@@ -56,7 +56,7 @@ Cuenta pendiente se confirma antes de pedir desafío; una caída del proveedor n
 
 `npm run migrate --prefix server` aplica 001–004. Base histórica 001 necesita adopción explícita respaldada. `004_publication_image_positions.sql` falla atómicamente con más de cuatro imágenes históricas por publicación; requiere corrección del operador antes de reintento, sin eliminación automática.
 
-Sin browser E2E: React simula API; integración servidor usa PostgreSQL temporal. No hay scheduler/daemon de outbox ni productores para notificaciones y flujos posteriores; sí eventos transaccionales de identidad/rol/publicación. Por confirmar: alta operativa de administradores, retención/almacenamiento de evidencia, gobierno de términos/proveedores y despliegue del worker.
+Sin browser E2E: React simula API; integración servidor usa PostgreSQL temporal y cada suite destructiva/productora posee una base privada para evitar interferencia paralela. No hay scheduler/daemon de outbox ni productores para notificaciones y flujos posteriores; sí eventos transaccionales de identidad/rol/publicación. Por confirmar: alta operativa de administradores, retención/almacenamiento de evidencia, gobierno de términos/proveedores y despliegue del worker.
 
 ## Requisitos no funcionales
 

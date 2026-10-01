@@ -21,7 +21,9 @@ async function transaction(db, work) {
   } catch (error) {
     if (client) { try { await client.query('ROLLBACK'); } catch (rollbackError) { releaseError = rollbackError; } }
     if (error instanceof AppError) throw error;
-    throw fail(500, 'INTERNAL_ERROR', 'Error interno del servidor.');
+    const internal = fail(500, 'INTERNAL_ERROR', 'Error interno del servidor.');
+    internal.cause = error;
+    throw internal;
   } finally { client?.release(releaseError); }
 }
 

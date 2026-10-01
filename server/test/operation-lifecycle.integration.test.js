@@ -130,10 +130,15 @@ describe.skipIf(!enabled)('pending operation requests on disposable PostgreSQL',
     const before = (await db.query("SELECT COUNT(*)::int AS count FROM audit_logs WHERE action='operation.requested'")).rows[0].count;
     await db.query(`ALTER TABLE outbox_events ADD CONSTRAINT ${constraint} CHECK (aggregate_type <> 'operation') NOT VALID`);
     try {
+      await expect(service.requestOperation(db, requester, saleTerms(pub))).rejects.toMatchObject({
+        status: 500, code: 'INTERNAL_ERROR', cause: { code: '23514', constraint },
+      });
       const response = await request(app).post('/api/operations').set(auth(requester)).send(saleTerms(pub));
       expect(response.status).toBe(500);
+      expect(JSON.stringify(response.body)).not.toContain(constraint);
       expect((await db.query('SELECT * FROM operations WHERE publication_id=$1', [pub.id])).rows).toEqual([]);
       expect((await db.query("SELECT COUNT(*)::int AS count FROM audit_logs WHERE action='operation.requested'")).rows[0].count).toBe(before);
+      expect((await db.query("SELECT * FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction'")).rows).toEqual([]);
     } finally { await db.query(`ALTER TABLE outbox_events DROP CONSTRAINT ${constraint}`); }
   });
   it('uses current database state for both participants and participant reads', async () => {
@@ -147,5 +152,42 @@ describe.skipIf(!enabled)('pending operation requests on disposable PostgreSQL',
     await expect(service.getParticipantOperation(db, requester, created.id)).rejects.toMatchObject({ status: 403 });
     await db.query("UPDATE users SET status='Activa' WHERE id=$1", [requester]);
     await expect(service.getParticipantOperation(db, stranger, created.id)).rejects.toMatchObject({ status: 404 });
+  });
+  it('denies a deleted requester before any request effect or open transaction', async () => {
+    const pub = await publication(); const deletedRequester = await user();
+    await db.query('DELETE FROM users WHERE id=$1', [deletedRequester]);
+    await expect(service.requestOperation(db, deletedRequester, saleTerms(pub))).rejects.toMatchObject({ status: 403 });
+    await expect(service.listParticipantOperations(db, deletedRequester)).rejects.toMatchObject({ status: 403 });
+    expect((await request(app).post('/api/operations').set(auth(deletedRequester)).send(saleTerms(pub))).status).toBe(401);
+    expect((await db.query('SELECT id FROM operations WHERE publication_id=$1', [pub.id])).rows).toEqual([]);
+    expect((await db.query("SELECT * FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction'")).rows).toEqual([]);
+  });
+  it('rejects a request when ownership changes after owner discovery but before the publication lock', async () => {
+    const pub = await publication();
+    const before = (await db.query("SELECT COUNT(*)::int AS count FROM audit_logs WHERE action='operation.requested'")).rows[0].count;
+    const beforeOutbox = (await db.query("SELECT COUNT(*)::int AS count FROM outbox_events WHERE event_type='operation.requested'")).rows[0].count;
+    const blocker = await db.connect(); await blocker.query('BEGIN');
+    await blocker.query('SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE', [owner]);
+    let pending;
+    try {
+      pending = service.requestOperation(db, requester, saleTerms(pub)).then(value => ({ value }), error => ({ error }));
+      let waiting = false;
+      for (let i = 0; i < 150 && !waiting; i++) {
+        waiting = (await db.query(`SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
+          AND wait_event_type='Lock' AND query LIKE '%FROM users WHERE id=$1 FOR NO KEY UPDATE%'`)).rowCount > 0;
+        if (!waiting) await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(waiting).toBe(true);
+      await blocker.query('UPDATE publications SET owner_id=$2 WHERE id=$1', [pub.id, stranger]);
+      await blocker.query('COMMIT');
+      expect((await pending).error).toMatchObject({ status: 409, code: 'PUBLICATION_UNAVAILABLE' });
+      expect((await db.query('SELECT owner_id FROM publications WHERE id=$1', [pub.id])).rows[0].owner_id).toBe(stranger);
+      expect((await db.query('SELECT id FROM operations WHERE publication_id=$1', [pub.id])).rows).toEqual([]);
+      expect((await db.query("SELECT COUNT(*)::int AS count FROM audit_logs WHERE action='operation.requested'")).rows[0].count).toBe(before);
+      expect((await db.query("SELECT COUNT(*)::int AS count FROM outbox_events WHERE event_type='operation.requested'")).rows[0].count).toBe(beforeOutbox);
+      expect((await db.query("SELECT * FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction'")).rows).toEqual([]);
+    } finally {
+      await blocker.query('ROLLBACK'); blocker.release(); if (pending) await pending;
+    }
   });
 });

@@ -58,7 +58,10 @@ server/test/phase3-traceability.test.js                        docs/BPMN/API con
 **Files:**
 - Create: `server/src/db/migrations/005_operation_status_values.sql`
 - Create: `server/src/db/migrations/006_operations_reservations.sql`
+- Modify: `server/src/controllers/operation.controller.js`
 - Create: `server/test/phase3-migration.integration.test.js`
+- Modify: `server/test/postgres.integration.test.js`
+- Modify: `server/test/publication-lifecycle.integration.test.js`
 
 **Interfaces:**
 - Produces operation statuses `Rechazada`, `Expirada`, and `Cancelación en reversión` in a migration committed before they are consumed.
@@ -70,7 +73,7 @@ server/test/phase3-traceability.test.js                        docs/BPMN/API con
 
 - [ ] **Step 1: Write failing clean and upgrade migration tests**
 
-Assert clean 001–006 migration, recorded 001–004 upgrade, enum values, exact columns/defaults/checks/FKs/triggers, transition primary key/seeds, rerun idempotence, checksums, and preservation of advanced legacy operations, snapshots, reservations, audit, and outbox. A legacy `Disponible` reservation is backfilled with `released_at=created_at` and `release_reason='legacy_status_backfill'`. Direct SQL tests must reject null statuses, mismatched reservation/operation publication, modality/date/interval mismatch in either update direction, mutable accepted snapshot, wrong transition precondition lookup, and post-migration release metadata inconsistent with status.
+Assert clean 001–006 migration, recorded 001–004 upgrade, enum values, exact columns/defaults/checks/FKs/triggers, transition primary key/seeds, rerun idempotence, checksums, and preservation of advanced legacy operations, snapshots, reservations, audit, and outbox. A legacy `Disponible` reservation is backfilled with `released_at=created_at` and `release_reason='legacy_status_backfill'`. Direct SQL tests must reject null statuses, mismatched reservation/operation publication, modality/date/interval mismatch in either update direction, mutable accepted snapshot, wrong transition precondition lookup, and post-migration release metadata inconsistent with status. Update existing direct-insert fixtures in the two listed test files to represent valid migrated states; keep the legacy HTTP test expectation unchanged until Task 3.
 
 - [ ] **Step 2: Write failing preflight and constraint tests**
 
@@ -90,6 +93,8 @@ Use guarded `ALTER TYPE operation_status ADD VALUE` statements only. Do not cons
 
 Acquire explicit locks on `publications`, `operations`, and `reservations` before preflight so application writes cannot race the diagnostic. Install `btree_gist`; reject ambiguous/invalid legacy rows with actionable exceptions; preserve accepted/advanced rows and backfill `accepted_at=created_at`, `decided_at=created_at`, `decided_by=oferente_id`, requested economics from `contract_snapshot` with publication values as documented fallback, and `requested_contract_version=publications.contract_version`. Backfill legacy `Disponible` release metadata with the documented approximation before checking the new invariant. Drop `contract_snapshot NOT NULL`; add the exact metadata/invariants in Interfaces, composite FK, modality/date constraint trigger, and a snapshot trigger allowing only null→non-null once. Add the partial live-sale unique index and GiST exclusion constraint over `publication_id` plus `tstzrange(start_date,end_date,'[)')` for the exact live statuses. Seed exactly the listed Phase 3 rows and legacy cancellation/reversal seams; do not seed forward payment or delivery transitions.
 
+Until Task 3 replaces the legacy create handler, its existing direct-to-payment insert must populate the new acceptance/decision/requested columns consistently so the Phase 2 HTTP regression remains green. This is an interim schema-compatibility edit only; Task 3 changes the HTTP behavior to pending requests.
+
 State/field matrix enforced for new rows: `Pendiente` has requested fields/expiry and no decision, acceptance, cancellation, snapshot, or reservation; `Aceptada` has acceptance and owner decision actor/time plus snapshot, with no cancellation; `Rechazada`/`Expirada` have decision time/reason, no acceptance/snapshot/cancellation, and `decided_by` is owner for rejection or null for system expiry; pre-acceptance `Cancelada` has cancellation actor/time/reason with no acceptance/snapshot; post-acceptance `Cancelada` retains acceptance/owner-decision/snapshot and adds requester cancellation metadata; advanced/reversal states require acceptance and snapshot, with reversal also requiring requester cancellation metadata. Legacy advanced rows receive the backfill above; ambiguous legacy `Pendiente` rows stop migration.
 
 - [ ] **Step 6: Verify migrations**
@@ -101,7 +106,7 @@ Expected: all migration and existing PostgreSQL suites PASS; failed preflights l
 - [ ] **Step 7: Commit**
 
 ```bash
-git add server/src/db/migrations/005_operation_status_values.sql server/src/db/migrations/006_operations_reservations.sql server/test/phase3-migration.integration.test.js
+git add server/src/db/migrations/005_operation_status_values.sql server/src/db/migrations/006_operations_reservations.sql server/src/controllers/operation.controller.js server/test/phase3-migration.integration.test.js server/test/postgres.integration.test.js server/test/publication-lifecycle.integration.test.js
 git commit -m "feat(db): add operation request and reservation lifecycle"
 ```
 

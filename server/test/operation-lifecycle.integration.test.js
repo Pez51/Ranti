@@ -155,11 +155,15 @@ describe.skipIf(!enabled)('pending operation requests on disposable PostgreSQL',
   });
   it('denies a deleted requester before any request effect or open transaction', async () => {
     const pub = await publication(); const deletedRequester = await user();
+    const beforeAudit = (await db.query("SELECT COUNT(*)::int AS count FROM audit_logs WHERE action='operation.requested'")).rows[0].count;
+    const beforeOutbox = (await db.query("SELECT COUNT(*)::int AS count FROM outbox_events WHERE event_type='operation.requested'")).rows[0].count;
     await db.query('DELETE FROM users WHERE id=$1', [deletedRequester]);
     await expect(service.requestOperation(db, deletedRequester, saleTerms(pub))).rejects.toMatchObject({ status: 403 });
     await expect(service.listParticipantOperations(db, deletedRequester)).rejects.toMatchObject({ status: 403 });
     expect((await request(app).post('/api/operations').set(auth(deletedRequester)).send(saleTerms(pub))).status).toBe(401);
     expect((await db.query('SELECT id FROM operations WHERE publication_id=$1', [pub.id])).rows).toEqual([]);
+    expect((await db.query("SELECT COUNT(*)::int AS count FROM audit_logs WHERE action='operation.requested'")).rows[0].count).toBe(beforeAudit);
+    expect((await db.query("SELECT COUNT(*)::int AS count FROM outbox_events WHERE event_type='operation.requested'")).rows[0].count).toBe(beforeOutbox);
     expect((await db.query("SELECT * FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction'")).rows).toEqual([]);
   });
   it('rejects a request when ownership changes after owner discovery but before the publication lock', async () => {

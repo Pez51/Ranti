@@ -308,6 +308,24 @@ describe.skipIf(!enabled)('pending operation requests on disposable PostgreSQL',
     expect(outcomes.map(row => row.status)).toEqual(['Aceptada', 'Aceptada']);
     expect((await db.query('SELECT id FROM reservations WHERE publication_id=$1', [pub.id])).rowCount).toBe(2);
   });
+  it('returns conflict without effects when a rental start has passed before acceptance', async () => {
+    const pub = await publication('Alquiler');
+    const now = Date.now();
+    const refreshed = (await db.query(`UPDATE publications SET available_from=$2,available_until=$3
+      WHERE id=$1 RETURNING contract_version`, [pub.id, new Date(now - 86400000), new Date(now + 86400000)])).rows[0];
+    pub.contract_version = refreshed.contract_version;
+    const created = await service.requestOperation(db, requester, { ...saleTerms(pub),
+      start_date: new Date(now + 60000).toISOString(), end_date: new Date(now + 3600000).toISOString() });
+    await db.query("UPDATE operations SET start_date=clock_timestamp()-interval '1 second' WHERE id=$1", [created.id]);
+    const response = await request(app).post(`/api/operations/${created.id}/accept`).set(auth(owner)).send({});
+    expect(response.status).toBe(409);
+    expect(JSON.stringify(response.body)).not.toMatch(/start_date|OPERATION_TERMS_INVALID|stack/i);
+    expect((await db.query('SELECT status,contract_snapshot FROM operations WHERE id=$1', [created.id])).rows[0])
+      .toMatchObject({ status: 'Pendiente', contract_snapshot: null });
+    expect((await db.query('SELECT id FROM reservations WHERE operation_id=$1', [created.id])).rowCount).toBe(0);
+    expect((await effects(created.id)).audit.map(row => row.action)).toEqual(['operation.requested']);
+    expect((await effects(created.id)).outbox.map(row => row.event_type)).toEqual(['operation.requested']);
+  });
   it.each(['reservations', 'audit_logs', 'outbox_events'])('rolls acceptance back when %s insertion fails', async table => {
     const pub = await publication(); const created = await service.requestOperation(db, requester, saleTerms(pub));
     const constraint = `decision_${randomUUID().replaceAll('-', '')}`;

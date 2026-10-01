@@ -225,6 +225,8 @@ export async function decideOperation(db, ownerId, operationId, input) {
     const rule = await transitionRule(client, 'Pendiente', status,
       status === 'Expirada' ? 'system' : 'owner', precondition);
     const reservationConflict = hasReservationConflict(reservations, operation);
+    if (status === 'Aceptada' && operation.modality !== 'Venta' &&
+      new Date(operation.start_date).getTime() < now.getTime()) throw conflict();
     authorizeTransition(rule, { operation, publication,
       actorId: status === 'Expirada' ? null : ownerId, now, reservationConflict });
     const snapshot = status === 'Aceptada' ? buildContractSnapshot({ ...publication,

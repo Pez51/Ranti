@@ -36,6 +36,7 @@ describe('configuración del servidor', () => {
       PAYMENT_PROVIDER: 'simulated',
       IDENTITY_PROVIDER: 'simulated',
       IDENTITY_SIMULATOR_EXPOSE_CODE: false,
+      OPERATION_REQUEST_TTL_HOURS: 48,
     });
     expect(Object.isFrozen(config)).toBe(true);
   });
@@ -54,6 +55,15 @@ describe('configuración del servidor', () => {
   it('rechaza PAYMENT_PROVIDER desconocido', () => {
     expect(() => loadEnv({ ...validSource, PAYMENT_PROVIDER: 'unknown' }))
       .toThrow(/configuraci[oó]n.*PAYMENT_PROVIDER/i);
+  });
+
+  it.each([['1', 1], ['168', 168]])('acepta TTL de solicitudes %s', (input, expected) => {
+    expect(loadEnv({ ...validSource, OPERATION_REQUEST_TTL_HOURS: input }).OPERATION_REQUEST_TTL_HOURS).toBe(expected);
+  });
+
+  it.each(['0', '169', '1.5', 'abc', '1e2', true])('rechaza TTL de solicitudes %s', (input) => {
+    expect(() => loadEnv({ ...validSource, OPERATION_REQUEST_TTL_HOURS: input }))
+      .toThrow(/OPERATION_REQUEST_TTL_HOURS/);
   });
 });
 

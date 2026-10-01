@@ -15,6 +15,9 @@ const schema = z.object({
   PAYMENT_PROVIDER: z.enum(['simulated', 'culqi', 'niubiz']).default('simulated'),
   IDENTITY_PROVIDER: z.enum(['simulated']).default('simulated'),
   IDENTITY_SIMULATOR_EXPOSE_CODE: z.enum(['true', 'false']).default('false').transform(value => value === 'true'),
+  OPERATION_REQUEST_TTL_HOURS: z.union([
+    z.number(), z.string().regex(/^[0-9]+$/).transform(Number),
+  ]).pipe(z.number().int().min(1).max(168)).default(48),
 }).superRefine((value, context) => {
   if (value.NODE_ENV !== 'test' && value.JWT_SECRET.length < 32) {
     context.addIssue({

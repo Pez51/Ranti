@@ -39,8 +39,13 @@ describe.skipIf(!enabled)('API con PostgreSQL temporal real', () => {
   async function operation(status = 'Lista para entrega') {
     const publicationId = await publication();
     const { rows } = await pool.query(
-      `INSERT INTO operations (publication_id, demandante_id, oferente_id, modality, status, contract_snapshot, otp_code)
-       VALUES ($1, $2, $3, 'Alquiler', $4, '{}', '123456') RETURNING id`,
+      `INSERT INTO operations
+       (publication_id, demandante_id, oferente_id, modality, status, start_date, end_date,
+        contract_snapshot, otp_code, requested_price, requested_guarantee_amount,
+        requested_contract_version, request_expires_at, accepted_at, decided_at, decided_by)
+       VALUES ($1, $2, $3, 'Alquiler', $4, '2026-10-01T10:00:00Z',
+         '2026-10-02T10:00:00Z', '{}', '123456', 10, 20, 1,
+         now() + interval '48 hours', now(), now(), $3) RETURNING id`,
       [publicationId, buyer, owner, status],
     );
     await pool.query(

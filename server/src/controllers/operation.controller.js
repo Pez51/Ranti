@@ -93,25 +93,29 @@ export const createOperation = async (req, res) => {
     // E. Insertar la Operación
     const insertOpQuery = `
       INSERT INTO operations 
-      (publication_id, demandante_id, oferente_id, modality, status, start_date, end_date, contract_snapshot, otp_code)
-      VALUES ($1, $2, $3, $4, 'Pendiente de pago/garantía', $5, $6, $7, $8)
+      (publication_id, demandante_id, oferente_id, modality, status, start_date, end_date,
+       contract_snapshot, otp_code, requested_price, requested_guarantee_amount,
+       requested_contract_version, request_expires_at, accepted_at, decided_at, decided_by)
+      VALUES ($1, $2, $3, $4, 'Pendiente de pago/garantía', $5, $6, $7, $8,
+              $9, $10, $11, CURRENT_TIMESTAMP + interval '48 hours',
+              CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $3)
       RETURNING id, status
     `;
     const opValues = [
       publication_id, demandante_id, publication.owner_id, publication.modality,
-      start_date || null, end_date || null, contractSnapshot, otpCode
+      start_date || null, end_date || null, contractSnapshot, otpCode,
+      publication.price, publication.guarantee_amount, publication.contract_version
     ];
     const { rows: newOp } = await client.query(insertOpQuery, opValues);
     const operationId = newOp[0].id;
 
-    // F. Insertar en la tabla de reservas (Si aplica)
-    if (publication.modality !== 'Venta') {
-      const insertResQuery = `
-        INSERT INTO reservations (publication_id, operation_id, start_date, end_date)
-        VALUES ($1, $2, $3, $4)
-      `;
-      await client.query(insertResQuery, [publication_id, operationId, start_date, end_date]);
-    }
+    // F. La operación contractual conserva una reserva, incluida la venta sin intervalo.
+    const insertResQuery = `
+      INSERT INTO reservations (publication_id, operation_id, start_date, end_date,
+                                status)
+      VALUES ($1, $2, $3, $4, 'Reservada/Bloqueada')
+    `;
+    await client.query(insertResQuery, [publication_id, operationId, start_date || null, end_date || null]);
 
     await client.query('COMMIT'); // Guardar cambios
 

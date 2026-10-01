@@ -6,7 +6,8 @@ import pg from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const enabled = process.env.RANTI_EPHEMERAL_DB === '1' && !!process.env.TEST_DATABASE_URL;
-const migrationNames = ['001_init.sql', '002_foundations.sql', '003_identity_publications.sql', '004_publication_image_positions.sql'];
+const migrationNames = ['001_init.sql', '002_foundations.sql', '003_identity_publications.sql',
+  '004_publication_image_positions.sql', '005_operation_status_values.sql', '006_operations_reservations.sql'];
 
 describe.skipIf(!enabled)('Phase 2 identity and publication migration', () => {
   let admin;
@@ -64,7 +65,7 @@ describe.skipIf(!enabled)('Phase 2 identity and publication migration', () => {
       expect(checksum).toBe(createHash('sha256').update(bytes).digest('hex'));
     }
     expect(await runMigrations(db)).toEqual({ applied: [], skipped: migrationNames });
-    expect((await db.query('SELECT count(*)::int AS count FROM schema_migrations')).rows[0].count).toBe(4);
+    expect((await db.query('SELECT count(*)::int AS count FROM schema_migrations')).rows[0].count).toBe(6);
   });
 
   it('upgrades recorded 001+002 without changing legacy user and publication data or relationships', async () => {
@@ -114,7 +115,7 @@ describe.skipIf(!enabled)('Phase 2 identity and publication migration', () => {
   }
   it('backfills stable zero-based image positions on recorded 003 and enforces null/range/uniqueness constraints', async () => {
     const id = await legacyImages();
-    expect(await runMigrations(db)).toEqual({ applied: ['004_publication_image_positions.sql'], skipped: migrationNames.slice(0, 3) });
+    expect(await runMigrations(db)).toEqual({ applied: migrationNames.slice(3), skipped: migrationNames.slice(0, 3) });
     expect((await db.query('SELECT image_url,position FROM publication_images WHERE publication_id=$1 ORDER BY position', [id])).rows)
       .toEqual([{ image_url: 'https://images.test/2', position: 0 }, { image_url: 'https://images.test/0', position: 1 },
         { image_url: 'https://images.test/1', position: 2 }, { image_url: 'https://images.test/3', position: 3 }]);

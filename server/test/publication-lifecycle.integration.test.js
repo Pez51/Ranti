@@ -201,8 +201,20 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
       expect((await request(app).get('/api/publications').query(query)).status).toBe(400);
   });
   async function operation(pub, status = 'Pendiente') {
-    return (await db.query(`INSERT INTO operations (publication_id,demandante_id,oferente_id,modality,status,contract_snapshot)
-      VALUES ($1,$2,$3,'Venta',$4,'{}') RETURNING id`, [pub.id, other, owner, status])).rows[0].id;
+    const pending = status === 'Pendiente';
+    const cancelled = status === 'Cancelada';
+    return (await db.query(`INSERT INTO operations
+      (publication_id,demandante_id,oferente_id,modality,status,contract_snapshot,
+       requested_price,requested_contract_version,request_expires_at,
+       accepted_at,decided_at,decided_by,cancelled_at,cancelled_by,cancellation_reason)
+      VALUES ($1,$2,$3,'Venta',$4,$5,25,1,now()+interval '48 hours',
+        CASE WHEN $6 THEN NULL ELSE now() END,
+        CASE WHEN $6 THEN NULL ELSE now() END,
+        CASE WHEN $6 THEN NULL ELSE $3::uuid END,
+        CASE WHEN $7 THEN now() ELSE NULL END,
+        CASE WHEN $7 THEN $2::uuid ELSE NULL END,
+        CASE WHEN $7 THEN 'requester_cancelled' ELSE NULL END) RETURNING id`,
+    [pub.id, other, owner, status, pending || cancelled ? null : {}, pending || cancelled, cancelled])).rows[0].id;
   }
   async function waitingForOperationLock(pid) {
     return (await db.query(`SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
@@ -244,7 +256,8 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
   it('waits for a locked pending operation and observes its committed transition before pausing', async () => {
     const pub = await create(); await submit(pub.id); const op = await operation(pub);
     const blocker = await db.connect(); await blocker.query('BEGIN');
-    await blocker.query("UPDATE operations SET status='Aceptada' WHERE id=$1", [op]);
+    await blocker.query(`UPDATE operations SET status='Aceptada',contract_snapshot='{}',
+      accepted_at=now(),decided_at=now(),decided_by=$2 WHERE id=$1`, [op, owner]);
     const participant = await db.connect();
     const participantDb = { connect: async () => ({ query: participant.query.bind(participant), release() {} }) };
     const paused = service.pausePublication(participantDb, owner, pub.id).then(value => ({ value }), error => ({ error }));
@@ -320,8 +333,10 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
       }
       expect(waiting).toBe(true);
       insertion = await reservation.query(`INSERT INTO operations
-        (publication_id,demandante_id,oferente_id,modality,status,contract_snapshot)
-        VALUES ($1,$2,$3,'Venta','Pendiente','{}') RETURNING id`, [pub.id, other, owner])
+        (publication_id,demandante_id,oferente_id,modality,status,contract_snapshot,
+         requested_price,requested_contract_version,request_expires_at)
+        VALUES ($1,$2,$3,'Venta','Pendiente',NULL,25,1,now()+interval '48 hours') RETURNING id`,
+      [pub.id, other, owner])
         .then(result => ({ result }), error => ({ error }));
       await reservation.query('COMMIT');
       const outcome = await pause;

@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Operations from './Operations';
 import { apiRequest } from '../../lib/api';
@@ -113,4 +113,36 @@ it('discards an outgoing detail response after switching to received operations'
   resolveDetail({ operation: base });
   await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
   expect(screen.queryByRole('dialog', { name: 'Detalle de operación' })).not.toBeInTheDocument();
+});
+
+it('closes stale detail after a conflicting decision and shows the refreshed status', async () => {
+  apiRequest.mockResolvedValueOnce(page([base])).mockResolvedValueOnce({ operation: base })
+    .mockRejectedValueOnce(Object.assign(new Error('El estado actual impide esta acción.'), { status: 409 }))
+    .mockResolvedValueOnce(page([{ ...base, status: 'Expirada', allowed_actions: [] }]));
+  setup(); await screen.findByRole('article', { name: /Calculadora/ });
+  fireEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  expect(await screen.findByRole('dialog', { name: 'Detalle de operación' })).toHaveTextContent('Pendiente');
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+  fireEvent.change(screen.getByLabelText('Motivo'), { target: { value: 'Ya no lo necesito' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelar' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(/impide esta acción/);
+  expect(await screen.findByText('Expirada')).toBeInTheDocument();
+  expect(screen.queryByRole('dialog', { name: 'Detalle de operación' })).not.toBeInTheDocument();
+});
+
+it('ignores a delayed detail response after a confirmed decision', async () => {
+  let resolveDetail;
+  apiRequest.mockResolvedValueOnce(page([base]))
+    .mockReturnValueOnce(new Promise(done => { resolveDetail = done; }))
+    .mockResolvedValueOnce({ operation: { ...base, status: 'Cancelada', allowed_actions: [] } })
+    .mockResolvedValueOnce(page([{ ...base, status: 'Cancelada', allowed_actions: [] }]));
+  setup(); await screen.findByRole('article', { name: /Calculadora/ });
+  fireEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+  fireEvent.change(screen.getByLabelText('Motivo'), { target: { value: 'Ya no lo necesito' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelar' }));
+  expect(await screen.findByText('Cancelada')).toBeInTheDocument();
+  await act(async () => resolveDetail({ operation: base }));
+  expect(screen.queryByRole('dialog', { name: 'Detalle de operación' })).not.toBeInTheDocument();
+  expect(screen.getByRole('article', { name: /Calculadora/ })).toHaveTextContent('Cancelada');
 });

@@ -69,6 +69,8 @@ export default function Operations() {
     if (action !== 'accept' && (normalized.length < 1 || normalized.length > 500)) {
       setError('Escribe un motivo de 1 a 500 caracteres.'); return;
     }
+    detailGeneration.current++;
+    setDetail(null); setDetailLoading(false);
     setBusy(true); setError(''); generation.current++;
     try {
       const response = await apiRequest(`/operations/${item.id}/${action}`, {
@@ -76,7 +78,6 @@ export default function Operations() {
       });
       setItems(previous => previous?.map(row => row.id === item.id ? response.operation : row) ?? []);
       setConfirmation(null);
-      if (detail?.id === item.id) setDetail(response.operation);
     } catch (failure) {
       setError(`${failure.message}${failure.status === 409 ? ' El estado pudo haber cambiado; revisa la operación actualizada.' : ''}`);
       setConfirmation(null);

@@ -104,12 +104,42 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
     expect(await effects(pub.id)).toEqual(afterImageEffects);
     expect((await db.query('SELECT status FROM operations WHERE id=$1', [pending.id])).rows[0].status).toBe('Pendiente');
   });
+  it('keeps approval and a pending request when a complete form payload changes only images', async () => {
+    const initial = { title: valid.title, description: valid.description, category: valid.category,
+      condition: valid.condition, modality: 'Alquiler', price: '1000', guarantee_amount: '0',
+      available_from: '2027-01-01T00:00:00-05:00', available_until: '2027-01-10T00:00:00-05:00',
+      images: valid.images, provenance_evidence_ref: evidence };
+    const pub = await create(initial); await review(await submit(pub.id));
+    const pending = await operationService.requestOperation(db, other, { publication_id: pub.id,
+      requested_price: '1000.00', requested_guarantee_amount: '0.00', requested_contract_version: 1,
+      start_date: '2027-01-03', end_date: '2027-01-05' });
+    const before = await row(pub.id); const beforeEffects = await effects(pub.id);
+    const formPayload = { ...initial, price: '1000.00', guarantee_amount: '0.00',
+      available_from: '2027-01-01', available_until: '2027-01-10' };
+    const noOp = await service.updatePublication(db, owner, pub.id, formPayload);
+    expect(noOp).toMatchObject({ status: 'Activa', reviewed_by: admin, contract_version: '1' });
+    expect(await row(pub.id)).toEqual(before); expect(await effects(pub.id)).toEqual(beforeEffects);
+
+    const replacement = 'https://images.example.test/replacement-form';
+    const edited = await service.updatePublication(db, owner, pub.id,
+      { ...formPayload, images: [replacement] });
+    expect(edited).toMatchObject({ status: 'Activa', reviewed_by: admin, contract_version: '1' });
+    expect(edited.images).toEqual([replacement]);
+    expect(edited.reviewed_at).toEqual(before.reviewed_at);
+    expect(edited.submitted_at).toEqual(before.submitted_at);
+    expect((await db.query('SELECT status,decision_reason FROM operations WHERE id=$1', [pending.id])).rows[0])
+      .toEqual({ status: 'Pendiente', decision_reason: null });
+    expect((await effects(pending.id)).audit.map(event => event.action)).toEqual(['operation.requested']);
+  });
   it('rejects removing the required image from an active approved publication without touching its request', async () => {
-    const pub = await create({ price: 500 }); await review(await submit(pub.id));
+    const formPayload = { ...valid, price: '500', guarantee_amount: '0', available_from: null,
+      available_until: null, provenance_evidence_ref: null };
+    const pub = await create(formPayload); await review(await submit(pub.id));
     const pending = await operationService.requestOperation(db, other, { publication_id: pub.id,
       requested_price: '500.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 });
     const before = await row(pub.id); const beforeEffects = await effects(pub.id);
-    await expect(service.updatePublication(db, owner, pub.id, { images: [] })).rejects.toMatchObject({ status: 422 });
+    await expect(service.updatePublication(db, owner, pub.id,
+      { ...formPayload, images: [] })).rejects.toMatchObject({ status: 422 });
     expect((await row(pub.id))).toEqual(before);
     expect(await effects(pub.id)).toEqual(beforeEffects);
     expect((await db.query('SELECT status FROM operations WHERE id=$1', [pending.id])).rows[0].status).toBe('Pendiente');
@@ -125,6 +155,20 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
       .toEqual({ status: 'Rechazada', decision_reason: 'contract_changed' });
     expect((await effects(pending.id)).outbox.map(event => event.event_type))
       .toEqual(['operation.requested', 'operation.rejected']);
+  });
+  it.each([
+    ['contractual title', { title: 'Contract revised' }, '2', 'contract_changed'],
+    ['review evidence', { provenance_evidence_ref: 'https://evidence.example.test/new-document' }, '1', 'publication_unavailable'],
+  ])('restages a high-risk complete form edit to %s and invalidates its pending request', async (_label, change, version, reason) => {
+    const formPayload = { ...valid, price: '1000', guarantee_amount: '0', available_from: null,
+      available_until: null, provenance_evidence_ref: evidence };
+    const pub = await create(formPayload); await review(await submit(pub.id));
+    const pending = await operationService.requestOperation(db, other, { publication_id: pub.id,
+      requested_price: '1000.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 });
+    const edited = await service.updatePublication(db, owner, pub.id, { ...formPayload, ...change });
+    expect(edited).toMatchObject({ status: 'Pendiente de revisión', reviewed_by: null, contract_version: version });
+    expect((await db.query('SELECT status,decision_reason FROM operations WHERE id=$1', [pending.id])).rows[0])
+      .toEqual({ status: 'Rechazada', decision_reason: reason });
   });
   it('rejects pending requests after contractual edits but preserves them after image-only and no-op edits', async () => {
     const pub = await create(); await submit(pub.id);

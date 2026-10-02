@@ -47,6 +47,15 @@ function patchInput(input) {
   return patch;
 }
 
+function samePersistedValue(key, before, next) {
+  if (key === 'images') return before.length === next.length && before.every((url, index) => url === next[index]);
+  if (key === 'price' || key === 'guarantee_amount')
+    return before == null || next == null ? before === next : money(before).cents === money(next).cents;
+  if (key === 'available_from' || key === 'available_until')
+    return before == null || next == null ? before === next : before.getTime() === next.getTime();
+  return before === next;
+}
+
 async function transaction(db, work) {
   let client, releaseError;
   try {
@@ -163,10 +172,10 @@ export async function updatePublication(db, ownerId, id, input) {
     if (!['Borrador', 'Pausada', 'Activa'].includes(before.status)) throw conflict();
     await unblocked(client, id);
     const row = { ...before, ...patch }; validateWindow(row);
-    if (!(patch.modality && before.risk_policy_version === unsetModality) &&
-        JSON.stringify(Object.fromEntries(Object.keys(patch).map(key => [key, before[key]]))) === JSON.stringify(patch)) return before;
+    const changed = Object.keys(patch).filter(key => !samePersistedValue(key, before[key], patch[key]));
+    if (!changed.length && !(patch.modality && before.risk_policy_version === unsetModality)) return before;
     // Approved active listings keep their review when only presentation images change.
-    if (before.status === 'Activa' && Object.keys(patch).every(key => key === 'images')) {
+    if (before.status === 'Activa' && changed.every(key => key === 'images')) {
       validateReady(row);
     } else {
       if (patch.modality) row.risk_policy_version = 'pilot-v1';
@@ -176,7 +185,7 @@ export async function updatePublication(db, ownerId, id, input) {
         const result = validateReady(row); row.risk_level = result.level; row.risk_policy_version = result.policyVersion;
       } else if (row.risk_policy_version !== unsetModality) { try { row.risk_level = risk(row).level; } catch { row.risk_level = null; } }
     }
-    if (Object.hasOwn(patch, 'images')) await images(client, id, row.images);
+    if (changed.includes('images')) await images(client, id, row.images);
     const updated = await persist(client, row);
     if (updated.contract_version !== before.contract_version)
       await invalidateAffectedPendingOperations(client, id, 'contract_changed');

@@ -193,7 +193,10 @@ export async function cancelOperation(db, actorId, operationId, input) {
     for (const id of [...new Set([actorId, discovered.demandante_id, discovered.oferente_id,
       discovered.owner_id])].sort()) {
       const user = (await client.query('SELECT id,status,verification_status FROM users WHERE id=$1 FOR NO KEY UPDATE', [id])).rows[0];
-      if (id === actorId || id === discovered.demandante_id || id === discovered.owner_id) requireCurrentUser(user);
+      // Cancellation is the requester's withdrawal. A suspended counterpart
+      // must not strand an accepted reservation; still lock their row so the
+      // established user→publication→operation order is preserved.
+      if (id === actorId || id === discovered.demandante_id) requireCurrentUser(user);
     }
     const publication = (await client.query('SELECT * FROM publications WHERE id=$1 FOR UPDATE',
       [discovered.publication_id])).rows[0];

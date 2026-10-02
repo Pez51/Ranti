@@ -270,6 +270,24 @@ describe.skipIf(!enabled)('pending operation requests on disposable PostgreSQL',
     expect((await effects(first.id)).audit.map(row => row.action)).toEqual([
       'operation.requested', 'operation.accepted', 'operation.cancelled']);
   });
+  it('lets an active requester release an accepted reservation after the owner is suspended', async () => {
+    const pub = await publication();
+    const created = await service.requestOperation(db, requester, saleTerms(pub));
+    await service.decideOperation(db, owner, created.id, { decision: 'accept' });
+    await db.query("UPDATE users SET status='Suspendida' WHERE id=$1", [owner]);
+    try {
+      const response = await request(app).post(`/api/operations/${created.id}/cancel`)
+        .set(auth(requester)).send({ reason: 'Ya no lo necesito' });
+      expect(response.status).toBe(200);
+      expect(response.body.operation.status).toBe('Cancelada');
+      expect((await db.query('SELECT status,released_at FROM reservations WHERE operation_id=$1', [created.id])).rows[0])
+        .toMatchObject({ status: 'Disponible', released_at: expect.any(Date) });
+      expect((await effects(created.id)).audit.map(row => row.action))
+        .toEqual(['operation.requested', 'operation.accepted', 'operation.cancelled']);
+    } finally {
+      await db.query("UPDATE users SET status='Activa' WHERE id=$1", [owner]);
+    }
+  });
   it('denies owner and foreign cancellation, rejects later states, and retains reversal reservations', async () => {
     const pub = await publication(); const created = await service.requestOperation(db, requester, saleTerms(pub));
     for (const actor of [owner, stranger])

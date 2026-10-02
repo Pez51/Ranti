@@ -83,6 +83,49 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
     expect((await db.query('SELECT id FROM reservations WHERE operation_id=$1', [pending.id])).rowCount).toBe(0);
     expect((await effects(pending.id)).audit.map(row => row.action)).toEqual(['operation.requested', 'operation.rejected']);
   });
+  it('keeps an admin-approved high-risk publication and its request active after an image-only edit or no-op', async () => {
+    const pub = await create({ price: 500 }); const submitted = await submit(pub.id);
+    await review(submitted);
+    const before = await row(pub.id);
+    expect(before).toMatchObject({ status: 'Activa', reviewed_by: admin, contract_version: '1' });
+    const pending = await operationService.requestOperation(db, other, { publication_id: pub.id,
+      requested_price: '500.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 });
+    const image = 'https://images.example.test/replacement';
+    const edited = await service.updatePublication(db, owner, pub.id, { images: [image] });
+    expect(edited).toMatchObject({ status: 'Activa', reviewed_by: admin, contract_version: '1' });
+    expect(edited.reviewed_at).toEqual(before.reviewed_at);
+    expect(edited.submitted_at).toEqual(before.submitted_at);
+    expect((await db.query('SELECT status,decision_reason FROM operations WHERE id=$1', [pending.id])).rows[0])
+      .toEqual({ status: 'Pendiente', decision_reason: null });
+    expect((await effects(pending.id)).audit.map(event => event.action)).toEqual(['operation.requested']);
+    const afterImageEffects = await effects(pub.id);
+    const same = await service.updatePublication(db, owner, pub.id, { images: [image] });
+    expect(same).toMatchObject({ status: 'Activa', reviewed_by: admin, contract_version: '1' });
+    expect(await effects(pub.id)).toEqual(afterImageEffects);
+    expect((await db.query('SELECT status FROM operations WHERE id=$1', [pending.id])).rows[0].status).toBe('Pendiente');
+  });
+  it('rejects removing the required image from an active approved publication without touching its request', async () => {
+    const pub = await create({ price: 500 }); await review(await submit(pub.id));
+    const pending = await operationService.requestOperation(db, other, { publication_id: pub.id,
+      requested_price: '500.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 });
+    const before = await row(pub.id); const beforeEffects = await effects(pub.id);
+    await expect(service.updatePublication(db, owner, pub.id, { images: [] })).rejects.toMatchObject({ status: 422 });
+    expect((await row(pub.id))).toEqual(before);
+    expect(await effects(pub.id)).toEqual(beforeEffects);
+    expect((await db.query('SELECT status FROM operations WHERE id=$1', [pending.id])).rows[0].status).toBe('Pendiente');
+  });
+  it('restages an admin-approved high-risk publication after a contractual change and rejects its request', async () => {
+    const pub = await create({ price: 500 }); const submitted = await submit(pub.id);
+    await review(submitted);
+    const pending = await operationService.requestOperation(db, other, { publication_id: pub.id,
+      requested_price: '500.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 });
+    const edited = await service.updatePublication(db, owner, pub.id, { title: 'Contract revised' });
+    expect(edited).toMatchObject({ status: 'Pendiente de revisión', reviewed_by: null, contract_version: '2' });
+    expect((await db.query('SELECT status,decision_reason FROM operations WHERE id=$1', [pending.id])).rows[0])
+      .toEqual({ status: 'Rechazada', decision_reason: 'contract_changed' });
+    expect((await effects(pending.id)).outbox.map(event => event.event_type))
+      .toEqual(['operation.requested', 'operation.rejected']);
+  });
   it('rejects pending requests after contractual edits but preserves them after image-only and no-op edits', async () => {
     const pub = await create(); await submit(pub.id);
     const pending = await operationService.requestOperation(db, other, { publication_id: pub.id,

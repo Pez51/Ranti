@@ -2,12 +2,20 @@ import { ShieldCheck, User, AlertCircle, PackageSearch } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { apiRequest } from '../../lib/api';
+import { getSession } from '../../lib/auth';
 
 export default function ProductDetail() {
   const { id } = useParams();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [requestError, setRequestError] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [confirmation, setConfirmation] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState(null);
+  const session = getSession();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -36,6 +44,40 @@ export default function ProductDetail() {
 
   const primaryImage = product.images?.find((image) => image.is_primary)?.image_url || product.images?.[0]?.image_url;
   const price = product.modality === 'Préstamo' ? 'Gratis' : `S/ ${Number(product.price).toFixed(2)}`;
+  const dated = product.modality !== 'Venta';
+  const money = value => Number(value).toFixed(2);
+  const peruDay = value => value && new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(value));
+  const availableFrom = peruDay(product.available_from);
+  const availableUntil = peruDay(product.available_until);
+
+  function ask() {
+    setRequestError('');
+    if (dated && (!startDate || !endDate || startDate >= endDate ||
+      (availableFrom && startDate < availableFrom) || (availableUntil && endDate > availableUntil))) {
+      setRequestError('Selecciona fechas válidas dentro de la disponibilidad indicada.');
+      return;
+    }
+    setConfirmation(true);
+  }
+
+  async function request() {
+    if (busy || !session?.token) return;
+    setBusy(true); setRequestError('');
+    try {
+      const body = { publication_id: product.id, requested_price: money(product.price),
+        requested_guarantee_amount: money(product.guarantee_amount),
+        requested_contract_version: product.contract_version,
+        ...(dated ? { start_date: startDate, end_date: endDate } : {}) };
+      const response = await apiRequest('/operations', { token: session.token, method: 'POST', body: JSON.stringify(body) });
+      setCreated(response.operation);
+      setConfirmation(false);
+    } catch (failure) {
+      setConfirmation(false);
+      setRequestError(failure.message);
+    } finally { setBusy(false); }
+  }
 
   return (
     <div className="py-6 max-w-6xl mx-auto">
@@ -72,7 +114,29 @@ export default function ProductDetail() {
                 <p className="text-sm font-bold text-gray-600">Garantía propuesta: S/ {Number(product.guarantee_amount).toFixed(2)}. El cobro y la custodia aún no están habilitados.</p>
               </div>
             )}
-            <button type="button" disabled className="w-full bg-gray-200 text-gray-500 px-6 py-4 rounded-xl border-4 border-gray-400 font-display font-bold text-xl cursor-not-allowed">Solicitudes próximamente</button>
+            <p className="text-sm font-bold text-gray-600 mb-3">Garantía: S/ {money(product.guarantee_amount)} · Versión {product.contract_version}</p>
+            {dated && <div className="workflow !p-3 !m-0 mb-4">
+              <p>Disponibilidad: {availableFrom} a {availableUntil} (fin exclusivo).</p>
+              <label htmlFor="request-start">Inicio</label>
+              <input id="request-start" type="date" min={availableFrom || undefined} max={availableUntil || undefined} value={startDate} onChange={event => setStartDate(event.target.value)} />
+              <label htmlFor="request-end">Fin</label>
+              <input id="request-end" type="date" min={availableFrom || undefined} max={availableUntil || undefined} value={endDate} onChange={event => setEndDate(event.target.value)} />
+            </div>}
+            {created ? <div role="status" className="bg-green-50 p-4 rounded-xl font-bold">
+              Solicitud pendiente. El oferente aún debe decidir; no hay reserva ni cobro.
+              <Link to="/operaciones" className="block underline mt-2">Ver mis operaciones</Link>
+            </div> : session ?
+              <button type="button" disabled={busy} onClick={ask} className="w-full bg-ranti-secondary text-ranti-ink px-6 py-4 rounded-xl border-4 border-ranti-ink font-display font-bold text-xl">Solicitar operación</button> :
+              <Link to="/login" className="block text-center underline font-bold">Inicia sesión para solicitar</Link>}
+            {requestError && <p role="alert" className="text-red-700 font-bold mt-3">{requestError}</p>}
+            {confirmation && <div role="dialog" aria-label="Confirmar solicitud" className="workflow">
+              <h2 className="font-bold">Confirmar solicitud</h2>
+              <p>Precio: S/ {money(product.price)} · Garantía: S/ {money(product.guarantee_amount)} · Versión {product.contract_version}</p>
+              {dated && <p>Del {startDate} al {endDate} (fin exclusivo).</p>}
+              <p>La solicitud quedará pendiente de decisión. No se realizará ningún cobro ni reserva ahora.</p>
+              <button type="button" disabled={busy} onClick={request}>{busy ? 'Enviando…' : 'Confirmar solicitud'}</button>
+              <button type="button" disabled={busy} onClick={() => setConfirmation(false)}>Volver</button>
+            </div>}
             <p className="text-xs font-bold text-gray-400 text-center mt-4 flex items-center justify-center gap-1"><AlertCircle size={14}/> No se realizará ningún cobro.</p>
           </div>
         </div>

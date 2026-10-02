@@ -14,3 +14,9 @@ it('makes registration reachable without a session', () => {
   sessionStorage.clear(); window.history.replaceState({}, '', '/registro'); render(<App />);
   expect(screen.getByRole('heading', { name: 'Crear cuenta UCSM' })).toBeInTheDocument();
 });
+it('routes authenticated participants to their operations and exposes navigation', async () => {
+  apiRequest.mockResolvedValueOnce({ items: [], limit: 20, offset: 0 });
+  window.history.replaceState({}, '', '/operaciones'); render(<App />);
+  expect(await screen.findByText('No tienes solicitudes enviadas.')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Mis operaciones' })).toHaveAttribute('href', '/operaciones');
+});

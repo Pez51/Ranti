@@ -19,6 +19,7 @@ import ArcoForm from './features/legal/ArcoForm';
 // Vistas de Operaciones
 import Checkout from './features/operations/Checkout';
 import EntregaOTP from './features/operations/EntregaOTP';
+import Operations from './features/operations/Operations';
 
 // Paneles (Dashboards)
 import AdminDashboard from './features/dashboard/AdminDashboard';
@@ -36,6 +37,7 @@ function App() {
           <Route path="/registro" element={<Register />} />
           <Route path="/mis-publicaciones" element={<RequireSession><ManagePublications /></RequireSession>} />
           <Route path="/publicar" element={<RequireSession><CreatePublication /></RequireSession>} />
+          <Route path="/operaciones" element={<RequireSession><Operations /></RequireSession>} />
           
           <Route path="/checkout/:id" element={<RequireSession><Checkout /></RequireSession>} />
           <Route path="/entrega/:id" element={<RequireSession><EntregaOTP /></RequireSession>} />

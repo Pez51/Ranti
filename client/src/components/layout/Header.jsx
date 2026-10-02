@@ -57,6 +57,7 @@ export default function Header() {
               </Link>
 
               <div className="flex gap-2 md:gap-4">
+                {isLoggedIn && <Link to="/operaciones" className="bg-white text-ranti-ink px-3 py-2 rounded-full border-4 border-ranti-ink shadow-solid font-display font-bold text-sm flex items-center">Mis operaciones</Link>}
                 {isLoggedIn && (
                   <button onClick={() => setIsNotifOpen(true)} className="bg-yellow-300 text-ranti-ink p-2 rounded-full border-4 border-ranti-ink shadow-solid hover:bg-yellow-400 transition-all relative active:translate-y-1 active:shadow-solid-sm">
                     <Bell size={20} strokeWidth={2.5} />

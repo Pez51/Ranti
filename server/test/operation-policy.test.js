@@ -171,4 +171,19 @@ describe('decisions, transitions, snapshots and projections', () => {
     expect(JSON.stringify(projected)).not.toMatch(/otp|secret|evidence|worker|email/);
     expect(() => publicOperation(row, other)).toThrow();
   });
+
+  it.each(['Pendiente de pago/garantía', 'Lista para entrega'])(
+    'lets the requester ask for cancellation reversal from %s', status => {
+      const operation = { ...pending, status };
+      expect(publicOperation(operation, requester).allowed_actions).toEqual(['cancel']);
+      expect(publicOperation(operation, owner).allowed_actions).toEqual([]);
+    },
+  );
+
+  it.each(['Cancelación en reversión', 'Entregada/Activa', 'En cierre',
+    'Pendiente de resolución económica', 'Cerrada', 'En incidencia'])(
+    'does not offer requester cancellation from %s', status => {
+      expect(publicOperation({ ...pending, status }, requester).allowed_actions).toEqual([]);
+    },
+  );
 });

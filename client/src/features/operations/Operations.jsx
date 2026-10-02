@@ -4,12 +4,15 @@ import { apiRequest } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 
 const actions = { accept: 'Aceptar', reject: 'Rechazar', cancel: 'Cancelar' };
+const pageSize = 20;
+const reversalStatuses = ['Pendiente de pago/garantía', 'Lista para entrega'];
 const money = value => `S/ ${Number(value).toFixed(2)}`;
 const dateTime = value => value ? new Date(value).toLocaleString('es-PE', { timeZone: 'America/Lima' }) : '—';
 
 export default function Operations() {
   const token = getSession()?.token;
   const [side, setSide] = useState('requested');
+  const [offset, setOffset] = useState(0);
   const [items, setItems] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -26,12 +29,12 @@ export default function Operations() {
     if (!token) return;
     const current = ++generation.current;
     let cancelled = false;
-    apiRequest(`/operations/mine?side=${side}`, { token })
+    apiRequest(`/operations/mine?side=${side}&limit=${pageSize}&offset=${offset}`, { token })
       .then(response => { if (!cancelled && generation.current === current) setItems(response.items); })
       .catch(failure => { if (!cancelled && generation.current === current) setError(failure.message); })
       .finally(() => { if (!cancelled && generation.current === current) setLoading(false); });
     return () => { cancelled = true; };
-  }, [token, side, revision]);
+  }, [token, side, offset, revision]);
 
   function refresh() {
     if (loading || busy || confirmation) return;
@@ -45,7 +48,14 @@ export default function Operations() {
     if (next === side || busy) return;
     generation.current++;
     detailGeneration.current++;
-    setSide(next); setItems(null); setError(''); setLoading(true); setConfirmation(null); setDetail(null); setDetailLoading(false);
+    setSide(next); setOffset(0); setItems(null); setError(''); setLoading(true); setConfirmation(null); setDetail(null); setDetailLoading(false);
+  }
+
+  function choosePage(next) {
+    if (next < 0 || next > 10000 || next === offset || loading || busy || confirmation) return;
+    generation.current++;
+    detailGeneration.current++;
+    setOffset(next); setItems(null); setError(''); setLoading(true); setDetail(null); setDetailLoading(false);
   }
 
   function ask(item, action) {
@@ -99,7 +109,8 @@ export default function Operations() {
     </div>
     {loading && <p role="status">Cargando operaciones…</p>}
     {error && <p role="alert">{error}</p>}
-    {!loading && items?.length === 0 && <p>{side === 'requested' ? 'No tienes solicitudes enviadas.' : 'No tienes solicitudes recibidas.'}</p>}
+    {!loading && items?.length === 0 && <p>{offset > 0 ? 'No hay operaciones en esta página.' :
+      side === 'requested' ? 'No tienes solicitudes enviadas.' : 'No tienes solicitudes recibidas.'}</p>}
     {items?.map(item => <article key={item.id} aria-label={`Operación de ${item.publication?.title || 'publicación'}`}>
       <h2>{item.publication?.title || 'Publicación'}</h2>
       <p><strong>{item.status}</strong> · {item.modality}</p>
@@ -115,6 +126,11 @@ export default function Operations() {
       {item.allowed_actions?.filter(action => Object.hasOwn(actions, action)).map(action =>
         <button type="button" key={action} disabled={busy || Boolean(confirmation) || loading} onClick={() => ask(item, action)}>{actions[action]}</button>)}
     </article>)}
+    <nav aria-label="Páginas de operaciones">
+      <p>Página {Math.floor(offset / pageSize) + 1}</p>
+      <button type="button" disabled={offset === 0 || loading || busy || Boolean(confirmation)} onClick={() => choosePage(offset - pageSize)}>Página anterior</button>
+      <button type="button" disabled={loading || busy || Boolean(confirmation) || items?.length !== pageSize || offset >= 10000} onClick={() => choosePage(offset + pageSize)}>Siguiente página</button>
+    </nav>
     {detailLoading && <p role="status">Cargando detalle…</p>}
     {detail && <div role="dialog" aria-label="Detalle de operación">
       <h2>Detalle de operación</h2>
@@ -128,6 +144,8 @@ export default function Operations() {
     {confirmation && <div role="dialog" aria-label={`Confirmar ${actions[confirmation.action].toLowerCase()}`}>
       <h2>{actions[confirmation.action]}: {confirmation.item.publication?.title}</h2>
       <p>El servidor verificará el estado y los permisos antes de confirmar la acción.</p>
+      {confirmation.action === 'cancel' && reversalStatuses.includes(confirmation.item.status) &&
+        <p>Solicitarás una reversión que quedará pendiente de resolución. Esto no confirma la cancelación ni un reembolso.</p>}
       {confirmation.action !== 'accept' && <label htmlFor="operation-reason">Motivo
         <textarea id="operation-reason" maxLength={500} value={reason} onChange={event => setReason(event.target.value)} />
       </label>}

@@ -13,7 +13,7 @@ const base = { id: 'op-1', publication_id: 'pub-1', modality: 'Venta', status: '
   created_at: '2026-10-01T12:00:00Z', updated_at: '2026-10-01T12:00:00Z', contract_snapshot: null,
   allowed_actions: ['cancel'], publication: { id: 'pub-1', title: 'Calculadora', primary_image: null, contract_version: 4 },
   counterpart: { id: 'owner-1', display_name: 'Oferente', reputation_score: '4.2', operations_count: 2 } };
-const page = items => ({ items, limit: 20, offset: 0 });
+const page = (items, offset = 0) => ({ items, limit: 20, offset });
 function setup() { render(<MemoryRouter><Operations /></MemoryRouter>); }
 beforeEach(() => { vi.resetAllMocks(); session(); });
 
@@ -28,8 +28,8 @@ it('shows outgoing loading, pending terms and expiry, then received empty state'
   expect(card).toHaveTextContent(/Vence/);
   fireEvent.click(screen.getByRole('button', { name: 'Recibidas' }));
   expect(await screen.findByText('No tienes solicitudes recibidas.')).toBeInTheDocument();
-  expect(apiRequest.mock.calls[0][0]).toBe('/operations/mine?side=requested');
-  expect(apiRequest.mock.calls[1][0]).toBe('/operations/mine?side=received');
+  expect(apiRequest.mock.calls[0][0]).toBe('/operations/mine?side=requested&limit=20&offset=0');
+  expect(apiRequest.mock.calls[1][0]).toBe('/operations/mine?side=received&limit=20&offset=0');
 });
 
 it('accepts only after confirmation and displays the server refreshed state', async () => {
@@ -45,7 +45,7 @@ it('accepts only after confirmation and displays the server refreshed state', as
   fireEvent.click(screen.getByRole('button', { name: 'Confirmar aceptar' }));
   expect(await screen.findByText('Aceptada')).toBeInTheDocument();
   expect(apiRequest.mock.calls[2]).toEqual(['/operations/op-1/accept', expect.objectContaining({ token: 'real-token', method: 'POST' })]);
-  expect(apiRequest.mock.calls[3][0]).toBe('/operations/mine?side=received');
+  expect(apiRequest.mock.calls[3][0]).toBe('/operations/mine?side=received&limit=20&offset=0');
   expect(within(screen.getByRole('article', { name: /Calculadora/ })).getByText(/Pagos, garantías y entrega aún no disponibles/)).toBeInTheDocument();
 });
 
@@ -145,4 +145,80 @@ it('ignores a delayed detail response after a confirmed decision', async () => {
   await act(async () => resolveDetail({ operation: base }));
   expect(screen.queryByRole('dialog', { name: 'Detalle de operación' })).not.toBeInTheDocument();
   expect(screen.getByRole('article', { name: /Calculadora/ })).toHaveTextContent('Cancelada');
+});
+
+it.each(['Pendiente de pago/garantía', 'Lista para entrega'])(
+  'reaches an older %s request and explains cancellation remains in reversal', async status => {
+    const firstPage = Array.from({ length: 20 }, (_, index) => ({ ...base, id: `op-${index}`,
+      publication: { ...base.publication, title: `Primera página ${index}` }, allowed_actions: [] }));
+    const older = { ...base, id: 'op-older', status, publication: { ...base.publication, title: 'Solicitud antigua' } };
+    const reversing = { ...older, status: 'Cancelación en reversión', allowed_actions: [] };
+    apiRequest.mockResolvedValueOnce(page(firstPage)).mockResolvedValueOnce(page([older], 20))
+      .mockResolvedValueOnce({ operation: reversing }).mockResolvedValueOnce(page([reversing], 20));
+    setup();
+    await screen.findByRole('article', { name: /Primera página 0/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
+    const olderCard = await screen.findByRole('article', { name: /Solicitud antigua/ });
+    expect(screen.getByText('Página 2')).toBeInTheDocument();
+    expect(apiRequest.mock.calls[1][0]).toBe('/operations/mine?side=requested&limit=20&offset=20');
+    fireEvent.click(within(olderCard).getByRole('button', { name: 'Cancelar' }));
+    const dialog = screen.getByRole('dialog', { name: 'Confirmar cancelar' });
+    expect(dialog).toHaveTextContent(/reversión.*pendiente/i);
+    expect(dialog).not.toHaveTextContent(/reembolso confirmado|cancelación completada/i);
+    fireEvent.change(within(dialog).getByLabelText('Motivo'), { target: { value: ' Cambio de planes ' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmar cancelar' }));
+    expect(await screen.findByText('Cancelación en reversión')).toBeInTheDocument();
+    expect(apiRequest.mock.calls[2][0]).toBe('/operations/op-older/cancel');
+    await waitFor(() => expect(apiRequest.mock.calls[3][0]).toBe('/operations/mine?side=requested&limit=20&offset=20'));
+  },
+);
+
+it('discards a late page response after switching sides', async () => {
+  let resolveOlderPage;
+  const firstPage = Array.from({ length: 20 }, (_, index) => ({ ...base, id: `op-${index}`,
+    publication: { ...base.publication, title: `Primera página ${index}` } }));
+  apiRequest.mockResolvedValueOnce(page(firstPage))
+    .mockReturnValueOnce(new Promise(done => { resolveOlderPage = done; }))
+    .mockResolvedValueOnce(page([]));
+  setup();
+  await screen.findByRole('article', { name: /Primera página 0/ });
+  fireEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Recibidas' }));
+  expect(await screen.findByText('No tienes solicitudes recibidas.')).toBeInTheDocument();
+  await act(async () => resolveOlderPage(page([{ ...base, id: 'op-old', publication: { ...base.publication, title: 'Respuesta tardía' } }], 20)));
+  expect(screen.queryByRole('article', { name: /Respuesta tardía/ })).not.toBeInTheDocument();
+  expect(screen.getByText('Página 1')).toBeInTheDocument();
+});
+
+it('retries a failed later page without returning to the first page', async () => {
+  const firstPage = Array.from({ length: 20 }, (_, index) => ({ ...base, id: `op-${index}`,
+    publication: { ...base.publication, title: `Primera página ${index}` } }));
+  apiRequest.mockResolvedValueOnce(page(firstPage)).mockRejectedValueOnce(new Error('Error de red'))
+    .mockResolvedValueOnce(page([{ ...base, id: 'op-later', publication: { ...base.publication, title: 'Solicitud recuperada' } }], 20));
+  setup();
+  await screen.findByRole('article', { name: /Primera página 0/ });
+  fireEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Error de red');
+  expect(screen.getByText('Página 2')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Actualizar operaciones' }));
+  expect(await screen.findByRole('article', { name: /Solicitud recuperada/ })).toBeInTheDocument();
+  expect(apiRequest.mock.calls[2][0]).toBe('/operations/mine?side=requested&limit=20&offset=20');
+});
+
+it('offers a way back when the last full page is followed by an empty page', async () => {
+  const fullPage = Array.from({ length: 20 }, (_, index) => ({ ...base, id: `op-${index}`,
+    publication: { ...base.publication, title: `Solicitud ${index}` } }));
+  apiRequest.mockResolvedValueOnce(page(fullPage)).mockResolvedValueOnce(page(fullPage, 20))
+    .mockResolvedValueOnce(page([], 40)).mockResolvedValueOnce(page(fullPage, 20));
+  setup();
+  await screen.findByRole('article', { name: /Solicitud 0/ });
+  fireEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
+  await waitFor(() => expect(screen.getByText('Página 2')).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Siguiente página' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
+  expect(await screen.findByText('No hay operaciones en esta página.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Página anterior' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Página anterior' }));
+  expect(await screen.findByRole('article', { name: /Solicitud 0/ })).toBeInTheDocument();
+  expect(apiRequest.mock.calls[3][0]).toBe('/operations/mine?side=requested&limit=20&offset=20');
 });

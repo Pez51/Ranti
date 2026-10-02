@@ -178,7 +178,7 @@ export function publicOperation(row, viewerId) {
   const requesterView = viewerId === row.demandante_id;
   const counterpart = requesterView ? row.owner : row.requester;
   const allowed = row.status === 'Pendiente' ? (requesterView ? ['cancel'] : ['accept', 'reject']) :
-    requesterView && row.status === 'Aceptada' ? ['cancel'] : [];
+    requesterView && ['Aceptada', 'Pendiente de pago/garantía', 'Lista para entrega'].includes(row.status) ? ['cancel'] : [];
   return {
     ...pick(row, operationFields),
     contract_snapshot: row.accepted_at ? pick(row.contract_snapshot, snapshotFields) : null,

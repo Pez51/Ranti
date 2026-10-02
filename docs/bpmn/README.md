@@ -1,9 +1,41 @@
-# BPMN de Fase 2 — evidencia del código actual
+# BPMN de Fases 2–3 — evidencia del código actual
 
 Base revisada: `6ab28a5` más la corrección final de privacidad, 2026-09-30. No se usa el grafo obsoleto como prueba. Los modelos describen peticiones implementadas, no procesos ejecutables ni aprobación institucional real.
 
 - [Identidad y revisión de rol](identity-verification-and-role-review.bpmn) · [SVG](identity-verification-and-role-review.svg)
 - [Riesgo y ciclo de publicaciones](publication-risk-and-lifecycle.bpmn) · [SVG](publication-risk-and-lifecycle.svg)
+- [Solicitud, decisión, reserva, cancelación y expiración](operation-request-and-reservation.bpmn) · [SVG](operation-request-and-reservation.svg)
+
+## Operaciones: alcance, actores y cadena verificada
+
+El nuevo modelo reúne cuatro procesos de petición independientes sobre la misma operación: solicitud del demandante, decisión del oferente, cancelación del demandante y expiración del proceso automático. Sus lanes separan `Demandante`, `Oferente`, `Sistema` y `Proceso automático`; no interviene un proveedor externo. `POST /api/operations`, `GET /api/operations/mine`, `GET /api/operations/:id` y los POST `/:id/accept`, `/:id/reject`, `/:id/cancel` pasan por `operation.routes.js`, `auth.middleware.js`, `operation.controller.js`, `operation.service.js`, `operation.policy.js`, PostgreSQL, `appendAudit` y `enqueueOutboxEvent`. `expire-operations.js` ejecuta un lote manual/programable; no existe scheduler permanente. La vista `ProductDetail.jsx` solicita y `Operations.jsx` muestra/decide; el servidor vuelve a validar todo.
+
+El mapa Graphify existente indica esta cadena pero fue construido sobre `92094444`; cada afirmación siguiente se contrastó con fuente actual hasta `fb7b047` y las pruebas de `operation-lifecycle.integration.test.js`, `phase3-migration.integration.test.js`, `operation-policy.test.js` y `decision-privacy.test.js`. `006_operations_reservations.sql` contiene la autoridad de estado y reservas. Cada tarea de escritura en el diagrama es tentativa hasta COMMIT; fallo de auditoría/outbox o constraint implica rollback. Los flujos de lectura privada no se dibujan como mutaciones de estado.
+
+| Elemento BPMN | Tipo / hecho | Evidencia actual | Confianza |
+|---|---|---|---|
+| `Req_Start`, `Req_Input` | Inicio y userTask: solicitar términos | `operation.routes.js::POST /`; `ProductDetail.jsx::request` | Confirmada |
+| `Req_Auth`, `Req_Denied` | Gateway/end: JWT, cuenta suspendida/no verificada | `auth.middleware.js::requireAuth/requireVerifiedAccount`; `operation.service.js::requestOperation` | Confirmada |
+| `Req_Lock` | serviceTask: usuarios ordenados, publicación | `operation.service.js::requestOperation` | Confirmada |
+| `Req_Self`, `Req_SelfEnd` | Gateway/end: self-request 400 | `operation.service.js::requestOperation` | Confirmada |
+| `Req_Terms`, `Req_Invalid` | businessRule/end: invalid dates, versión, precio/garantía, estado | `operation.policy.js::parseOperationRequest/validateRequestedTerms`; `operation.service.js::requestOperation` | Confirmada |
+| `Req_Save`, `Req_Effects`, `Req_Commit`, `Req_Rollback`, `Req_Pending` | serviceTask/gateway/ends: `Pendiente`, no snapshot/reservation/OTP; audit/outbox o rollback | `operation.service.js::transaction/requestOperation`; `006_operations_reservations.sql::operations_state_fields_check`; `operation-lifecycle.integration.test.js` | Confirmada |
+| `Dec_Start`, `Dec_Input` | Inicio/userTask: aceptar o rechazar | `operation.routes.js::/:id/accept,/:id/reject`; `Operations.jsx::decide` | Confirmada |
+| `Dec_Auth`, `Dec_Denied`, `Dec_Lock` | Gateway/ends/serviceTask: suspended actor, propietario vigente, locks ordenados | `auth.middleware.js`; `operation.service.js::decideOperation` | Confirmada |
+| `Dec_Duplicate`, `Dec_Same`, `Dec_Stale` | Gateway/ends: duplicate same outcome sin efectos; opuesta/stale 409 | `operation.service.js::decideOperation`; `operation-lifecycle.integration.test.js` | Confirmada |
+| `Dec_Expired`, `Dec_Expire`, `Dec_ExpiredEnd` | Gateway/serviceTask/end: expiración perezosa `Pendiente→Expirada` y 409 tras COMMIT | `operation.service.js::decideOperation/expireLockedOperation` | Confirmada |
+| `Dec_Choice`, `Dec_Reject` | Gateway/serviceTask: rechazo con motivo `Pendiente→Rechazada`, sin reserva | `operation.policy.js::parseDecision/authorizeTransition`; `operation.service.js::decideOperation` | Confirmada |
+| `Dec_Current`, `Dec_Invalidated` | Gateway/serviceTask: paused/edited publication → `Rechazada`, 409 tras commit | `operation.service.js::changedContract/decideOperation`; `publication.service.js::invalidateAffectedPendingOperations` | Confirmada |
+| `Dec_Available`, `Dec_Conflict` | Gateway/end: concurrent incompatible acceptance 409, compatible continúa | `operation.service.js::hasReservationConflict/decideOperation`; `operation-lifecycle.integration.test.js` (100 Venta y 100 Alquiler, adyacentes) | Confirmada |
+| `Dec_Accept`, `Dec_Constraint` | serviceTask/end: snapshot inmutable + reserva; DB unique/exclusion conflict 409 | `operation.service.js::decideOperation/reservationConstraint`; `006_operations_reservations.sql` | Confirmada |
+| `Dec_Effects`, `Dec_Commit`, `Dec_Rollback`, `Dec_Accepted`, `Dec_Rejected` | serviceTask/gateway/ends: auditoría/outbox y COMMIT o rollback | `operation.service.js::transaction/decisionEffects`; `operation-lifecycle.integration.test.js` | Confirmada |
+| `Can_Start`, `Can_Input`, `Can_Auth`, `Can_Denied`, `Can_Lock` | Inicio/userTask/gateway/end/serviceTask: cancelación del demandante vigente | `operation.routes.js::/:id/cancel`; `operation.service.js::cancelOperation` | Confirmada |
+| `Can_Duplicate`, `Can_Same`, `Can_Stale`, `Can_Expired`, `Can_Expire`, `Can_ExpiredEnd` | Gateways/ends/serviceTask: repetición sin efectos, estado incompatible, expiración perezosa | `operation.service.js::cancelOperation/expireLockedOperation` | Confirmada |
+| `Can_Stage`, `Can_Pending`, `Can_Release`, `Can_Reversal` | Gateway/serviceTasks: pending sin reserva; accepted sin economía → `Disponible`; estados avanzados → `Cancelación en reversión` y reserva retenida | `operation.policy.js::edges/authorizeTransition`; `operation.service.js::cancelOperation`; `006_operations_reservations.sql` | Confirmada |
+| `Can_Effects`, `Can_Commit`, `Can_Rollback`, `Can_Cancelled`, `Can_ReversalEnd` | serviceTask/gateway/ends: efectos atómicos y estado final o seam | `operation.service.js::transaction/cancellationEffects/cancelOperation` | Confirmada |
+| `Exp_Start`, `Exp_Claim`, `Exp_Found`, `Exp_Apply`, `Exp_Effects`, `Exp_Commit`, `Exp_Done`, `Exp_Empty`, `Exp_Rollback` | Proceso automático: one-shot batch, SKIP LOCKED, sin duplicación | `expire-operations.js`; `operation.service.js::expirePendingOperations/expireLockedOperation` | Confirmada |
+
+Alternativas probadas: self-request, invalid dates y términos, suspended actor, paused/edited publication (`contract_changed`), stale/expired request, rejection, compatible/incompatible concurrent acceptance, DB constraint conflict, pre/post acceptance cancellation, reversal seam, duplicate action, audit/outbox rollback y missing scheduler/lazy expiry. El esquema usa intervalos `[inicio, fin)` y considera vivos únicamente `Bloqueo Provisional`, `Reservada/Bloqueada`, `Activa/En uso`. Por confirmar: programación operativa del comando, entrega real de eventos outbox y solución de reversión. La ruta heredada `/:id/confirm` sigue registrada pero ninguna solicitud de Fase 3 emite OTP ni llega a `Lista para entrega`; la entrega segura pertenece a otra fase.
 
 Cada pool es un proceso independiente de petición dentro de Ranti; sus lanes distinguen actor y Sistema. No hay intercambio externo real: el simulador corre dentro de Sistema, sin pool externo ni message flow. Las distintas peticiones se relacionan mediante el estado persistido, no mediante sequence flows entre procesos. Una terminación pendiente exige otra petición para continuar. Las tareas de escritura son tentativas hasta el COMMIT indicado; errores de persistencia usan rollback. Las flechas representan orden de decisiones de negocio, no cada sentencia SQL o catch.
 
@@ -256,13 +288,15 @@ Prueba de familia: [server/test/publication-lifecycle.integration.test.js](../..
 
 ## Validación y render reproducibles
 
-Con las herramientas de la skill instaladas, desde la raíz, repetir para ambos nombres:
+Con las herramientas de la skill instaladas, desde la raíz:
 
 ```powershell
 node "$env:USERPROFILE\.agents\skills\bpmn-process-review\scripts\validate-bpmn.mjs" docs/bpmn/identity-verification-and-role-review.bpmn
 node "$env:USERPROFILE\.agents\skills\bpmn-process-review\scripts\validate-bpmn.mjs" docs/bpmn/publication-risk-and-lifecycle.bpmn
+node "$env:USERPROFILE\.agents\skills\bpmn-process-review\scripts\validate-bpmn.mjs" docs/bpmn/operation-request-and-reservation.bpmn
 powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.agents\skills\bpmn-process-review\scripts\render-bpmn.ps1" -InputPath docs/bpmn/identity-verification-and-role-review.bpmn -OutputPath docs/bpmn/identity-verification-and-role-review.svg
 powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.agents\skills\bpmn-process-review\scripts\render-bpmn.ps1" -InputPath docs/bpmn/publication-risk-and-lifecycle.bpmn -OutputPath docs/bpmn/publication-risk-and-lifecycle.svg
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.agents\skills\bpmn-process-review\scripts\render-bpmn.ps1" -InputPath docs/bpmn/operation-request-and-reservation.bpmn -OutputPath docs/bpmn/operation-request-and-reservation.svg
 ```
 
-El validador usa bpmn-moddle; el render requiere bpmn-to-image. Verificación 2026-09-30: ambos archivos devolvieron `OK` (4 procesos, 1 diagrama cada uno), sin advertencias. Ambos renders devolvieron `OK`, con SVG no vacíos analizados como XML y vistas PNG derivadas inspeccionadas. La apertura en el editor fue solicitada y quedó en cola. Los tests de trazabilidad comprueban namespaces, IDs únicos, DI para nodos/flujos y documentación sin declaraciones ficticias. Gate completo y conteos frescos en el [README principal](../../README.md).
+El validador usa bpmn-moddle; el render requiere bpmn-to-image. Verificación 2026-10-01: el archivo nuevo de Fase 3 devolvió `OK` (4 procesos, 1 diagrama), sin advertencias; su SVG se generó y una vista PNG derivada se inspeccionó. Los dos archivos de Fase 2 fueron validados y renderizados el 2026-09-30. Los tests de trazabilidad comprueban namespaces, IDs únicos, DI para nodos/flujos y documentación. Gate completo y conteos frescos en el [README principal](../../README.md).

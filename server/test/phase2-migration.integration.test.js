@@ -7,7 +7,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 const enabled = process.env.RANTI_EPHEMERAL_DB === '1' && !!process.env.TEST_DATABASE_URL;
 const migrationNames = ['001_init.sql', '002_foundations.sql', '003_identity_publications.sql',
-  '004_publication_image_positions.sql', '005_operation_status_values.sql', '006_operations_reservations.sql'];
+  '004_publication_image_positions.sql', '005_operation_status_values.sql', '006_operations_reservations.sql',
+  '007_sale_reservation_reconciliation.sql'];
 
 describe.skipIf(!enabled)('Phase 2 identity and publication migration', () => {
   let admin;
@@ -65,7 +66,7 @@ describe.skipIf(!enabled)('Phase 2 identity and publication migration', () => {
       expect(checksum).toBe(createHash('sha256').update(bytes).digest('hex'));
     }
     expect(await runMigrations(db)).toEqual({ applied: [], skipped: migrationNames });
-    expect((await db.query('SELECT count(*)::int AS count FROM schema_migrations')).rows[0].count).toBe(6);
+    expect((await db.query('SELECT count(*)::int AS count FROM schema_migrations')).rows[0].count).toBe(7);
   });
 
   it('upgrades recorded 001+002 without changing legacy user and publication data or relationships', async () => {

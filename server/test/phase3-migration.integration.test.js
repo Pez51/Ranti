@@ -7,13 +7,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const enabled = process.env.RANTI_EPHEMERAL_DB === '1' && !!process.env.TEST_DATABASE_URL;
 const historical = ['001_init.sql', '002_foundations.sql', '003_identity_publications.sql', '004_publication_image_positions.sql'];
-const all = [...historical, '005_operation_status_values.sql', '006_operations_reservations.sql'];
+const throughSix = [...historical, '005_operation_status_values.sql', '006_operations_reservations.sql'];
+const all = [...throughSix, '007_sale_reservation_reconciliation.sql'];
 const first = '2026-11-01T10:00:00Z';
 const middle = '2026-11-02T10:00:00Z';
 const last = '2026-11-03T10:00:00Z';
 
 describe.skipIf(!enabled)('Phase 3 operation and reservation migration', () => {
-  let cluster, db, databaseName, historicalDirectory, runMigrations;
+  let cluster, db, databaseName, historicalDirectory, throughSixDirectory, runMigrations;
   let owner, requester, publication;
 
   async function user() {
@@ -61,7 +62,10 @@ describe.skipIf(!enabled)('Phase 3 operation and reservation migration', () => {
     url.pathname = `/${databaseName}`;
     db = new pg.Pool({ connectionString: url.href });
     historicalDirectory = await mkdtemp(join(tmpdir(), 'ranti-phase3-history-'));
+    throughSixDirectory = await mkdtemp(join(tmpdir(), 'ranti-phase3-six-'));
     for (const name of historical) await writeFile(join(historicalDirectory, name),
+      await readFile(new URL(`../src/db/migrations/${name}`, import.meta.url)));
+    for (const name of throughSix) await writeFile(join(throughSixDirectory, name),
       await readFile(new URL(`../src/db/migrations/${name}`, import.meta.url)));
     ({ runMigrations } = await import('../src/db/migrate.js'));
   });
@@ -78,9 +82,10 @@ describe.skipIf(!enabled)('Phase 3 operation and reservation migration', () => {
     if (databaseName && cluster) await cluster.query(`DROP DATABASE "${databaseName}"`);
     if (cluster) await cluster.end();
     if (historicalDirectory) await rm(historicalDirectory, { recursive: true, force: true });
+    if (throughSixDirectory) await rm(throughSixDirectory, { recursive: true, force: true });
   });
 
-  it('installs 001–006 in a clean database and records immutable checksums on one upgrade', async () => {
+  it('installs 001–007 in a clean database and records immutable checksums on one upgrade', async () => {
     await db.query('DROP SCHEMA public CASCADE'); await db.query('CREATE SCHEMA public');
     expect(await upgrade()).toEqual({ applied: all, skipped: [] });
     const rows = (await db.query('SELECT name,checksum FROM schema_migrations ORDER BY name')).rows;
@@ -118,6 +123,97 @@ describe.skipIf(!enabled)('Phase 3 operation and reservation migration', () => {
     await upgrade();
     expect((await db.query('SELECT requested_price,requested_guarantee_amount FROM operations WHERE id=$1', [operationId])).rows[0])
       .toEqual({ requested_price: '25.00', requested_guarantee_amount: '5.00' });
+  });
+
+  it('upgrades recorded 001–006, backfills only live legacy sales, and preserves advanced history', async () => {
+    const sale = await makePublication('Venta');
+    const liveSale = await legacyOperation({ publicationId: sale, modality: 'Venta', start: null, end: null });
+    const closedSalePublication = await makePublication('Venta');
+    const closedSale = await legacyOperation({ publicationId: closedSalePublication, modality: 'Venta',
+      status: 'Cerrada', start: null, end: null });
+    const advancedSalePublication = await makePublication('Venta');
+    const advancedSale = await legacyOperation({ publicationId: advancedSalePublication, modality: 'Venta',
+      status: 'Entregada/Activa', start: null, end: null });
+    const reservedSalePublication = await makePublication('Venta');
+    const reservedSale = await legacyOperation({ publicationId: reservedSalePublication, modality: 'Venta',
+      start: null, end: null });
+    const advanced = await legacyOperation({ status: 'Entregada/Activa' });
+    const advancedReservation = await legacyReservation(advanced, { status: 'Activa/En uso' });
+    await db.query(`INSERT INTO audit_logs (actor_id,action,entity_type,entity_id)
+      VALUES ($1,'legacy.advanced','operation',$2)`, [owner, advanced]);
+    await db.query(`INSERT INTO outbox_events (aggregate_type,aggregate_id,event_type,payload,deduplication_key)
+      VALUES ('operation',$1,'legacy.advanced','{}',$2)`, [advanced, randomUUID()]);
+    expect(await runMigrations(db, { directory: throughSixDirectory }))
+      .toEqual({ applied: throughSix.slice(4), skipped: historical });
+    const existingSaleReservation = (await db.query(`INSERT INTO reservations
+      (publication_id,operation_id,start_date,end_date,status) VALUES ($1,$2,NULL,NULL,'Reservada/Bloqueada')
+      RETURNING *`, [reservedSalePublication, reservedSale])).rows[0];
+    expect((await db.query('SELECT * FROM reservations WHERE operation_id=$1', [liveSale])).rows).toEqual([]);
+    const preserved = (await db.query('SELECT * FROM operations WHERE id=$1', [advanced])).rows[0];
+    const preservedReservation = (await db.query('SELECT * FROM reservations WHERE id=$1', [advancedReservation])).rows[0];
+    expect(await upgrade()).toEqual({ applied: all.slice(6), skipped: throughSix });
+    expect((await db.query('SELECT publication_id,start_date,end_date,status FROM reservations WHERE operation_id=$1',
+      [liveSale])).rows).toEqual([{ publication_id: sale, start_date: null, end_date: null,
+      status: 'Reservada/Bloqueada' }]);
+    expect((await db.query('SELECT * FROM reservations WHERE operation_id=$1', [closedSale])).rows).toEqual([]);
+    expect((await db.query('SELECT publication_id,start_date,end_date,status FROM reservations WHERE operation_id=$1',
+      [advancedSale])).rows).toEqual([{ publication_id: advancedSalePublication,
+      start_date: null, end_date: null, status: 'Reservada/Bloqueada' }]);
+    expect((await db.query('SELECT * FROM reservations WHERE operation_id=$1', [reservedSale])).rows)
+      .toEqual([existingSaleReservation]);
+    expect((await db.query('SELECT * FROM operations WHERE id=$1', [advanced])).rows[0]).toEqual(preserved);
+    expect((await db.query('SELECT * FROM reservations WHERE id=$1', [advancedReservation])).rows[0])
+      .toEqual(preservedReservation);
+    expect((await db.query('SELECT count(*)::int AS n FROM audit_logs WHERE entity_id=$1', [advanced])).rows[0].n).toBe(1);
+    expect((await db.query('SELECT count(*)::int AS n FROM outbox_events WHERE aggregate_id=$1', [advanced])).rows[0].n).toBe(1);
+    expect(await upgrade()).toEqual({ applied: [], skipped: all });
+    expect((await db.query('SELECT count(*)::int AS n FROM reservations WHERE operation_id=$1', [liveSale])).rows[0].n).toBe(1);
+  });
+
+  it('rejects ambiguous live sale commitments in 007 without changing 006 data', async () => {
+    const sale = await makePublication('Venta');
+    await legacyOperation({ publicationId: sale, modality: 'Venta', start: null, end: null });
+    await legacyOperation({ publicationId: sale, modality: 'Venta', start: null, end: null,
+      status: 'Pendiente de pago/garantía' });
+    await runMigrations(db, { directory: throughSixDirectory });
+    const before = (await db.query('SELECT * FROM operations ORDER BY id')).rows;
+    await expect(upgrade()).rejects.toThrow(/ambiguous live sale/i);
+    expect((await db.query('SELECT name FROM schema_migrations ORDER BY name')).rows.map(row => row.name)).toEqual(throughSix);
+    expect((await db.query('SELECT * FROM operations ORDER BY id')).rows).toEqual(before);
+    expect((await db.query('SELECT * FROM reservations')).rows).toEqual([]);
+  });
+
+  it('rejects a live sale with a released reservation rather than overwriting history', async () => {
+    const sale = await makePublication('Venta');
+    const id = await legacyOperation({ publicationId: sale, modality: 'Venta', start: null, end: null });
+    await runMigrations(db, { directory: throughSixDirectory });
+    await db.query(`INSERT INTO reservations (publication_id,operation_id,start_date,end_date,status,released_at,release_reason)
+      VALUES ($1,$2,NULL,NULL,'Disponible',now(),'legacy_release')`, [sale, id]);
+    await expect(upgrade()).rejects.toThrow(/live sale.*released reservation/i);
+    expect((await db.query('SELECT name FROM schema_migrations ORDER BY name')).rows.map(row => row.name)).toEqual(throughSix);
+    expect((await db.query('SELECT status,release_reason FROM reservations WHERE operation_id=$1', [id])).rows)
+      .toEqual([{ status: 'Disponible', release_reason: 'legacy_release' }]);
+  });
+
+  it('uses a backfilled sale reservation for service conflict and legacy cancellation after 001–006 upgrade', async () => {
+    const sale = await makePublication('Venta');
+    await db.query('UPDATE publications SET guarantee_amount=0 WHERE id=$1', [sale]);
+    const legacy = await legacyOperation({ publicationId: sale, modality: 'Venta', start: null, end: null,
+      snapshot: { agreed_price: 25, guarantee_amount: 0 } });
+    await runMigrations(db, { directory: throughSixDirectory });
+    await upgrade();
+    const service = await import('../src/modules/operations/operation.service.js');
+    const nextRequester = await user();
+    const requested = await service.requestOperation(db, nextRequester, { publication_id: sale,
+      requested_price: '25.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 });
+    await expect(service.decideOperation(db, owner, requested.id, { decision: 'accept' }))
+      .rejects.toMatchObject({ status: 409, code: 'OPERATION_CONFLICT' });
+    expect((await db.query('SELECT status FROM operations WHERE id=$1', [requested.id])).rows[0].status).toBe('Pendiente');
+    await db.query("UPDATE operations SET status='Pendiente de pago/garantía' WHERE id=$1", [legacy]);
+    const cancelled = await service.cancelOperation(db, requester, legacy, { reason: 'Changed my mind' });
+    expect(cancelled.status).toBe('Cancelación en reversión');
+    expect((await db.query('SELECT status,released_at FROM reservations WHERE operation_id=$1', [legacy])).rows)
+      .toEqual([{ status: 'Reservada/Bloqueada', released_at: null }]);
   });
 
   it('tracks only contractual publication changes and registers exactly the specified transition edges', async () => {
@@ -216,7 +312,7 @@ describe.skipIf(!enabled)('Phase 3 operation and reservation migration', () => {
       .rejects.toMatchObject({ code: '23505' });
   });
 
-  it('validates the final operation interval after two updates in one transaction', async () => {
+  it('rejects a coordinated reserved interval change before commit', async () => {
     await upgrade();
     const id = (await db.query(`INSERT INTO operations
       (publication_id,demandante_id,oferente_id,modality,status,start_date,end_date,contract_snapshot,
@@ -227,14 +323,42 @@ describe.skipIf(!enabled)('Phase 3 operation and reservation migration', () => {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
-      await client.query('UPDATE operations SET end_date=$2 WHERE id=$1', [id, last]);
-      await client.query('UPDATE operations SET end_date=$2 WHERE id=$1', [id, middle]);
-      await expect(client.query('COMMIT')).resolves.toMatchObject({ command: 'COMMIT' });
+      await client.query('UPDATE reservations SET end_date=$2 WHERE operation_id=$1', [id, last]);
+      await expect(client.query('UPDATE operations SET end_date=$2 WHERE id=$1', [id, last]))
+        .rejects.toThrow(/reserved operation scope is immutable/i);
     } finally {
       await client.query('ROLLBACK'); client.release();
     }
     expect((await db.query('SELECT end_date FROM operations WHERE id=$1', [id])).rows[0].end_date)
       .toEqual(new Date(middle));
+  });
+
+  it('allows no-op reserved scope updates and status transitions with reservation release', async () => {
+    const id = await legacyOperation();
+    await legacyReservation(id);
+    await upgrade();
+    await expect(db.query('UPDATE operations SET start_date=start_date,end_date=end_date,modality=modality,publication_id=publication_id WHERE id=$1',
+      [id])).resolves.toMatchObject({ rowCount: 1 });
+    const otherPublication = await makePublication();
+    for (const [sql, value] of [
+      ['UPDATE operations SET start_date=$2 WHERE id=$1', '2026-11-01T11:00:00Z'],
+      ['UPDATE operations SET modality=$2 WHERE id=$1', 'Venta'],
+      ['UPDATE operations SET publication_id=$2 WHERE id=$1', otherPublication],
+    ]) await expect(db.query(sql, [id, value])).rejects.toThrow(/reserved operation scope is immutable/i);
+    await db.query("UPDATE operations SET status='Pendiente de pago/garantía' WHERE id=$1", [id]);
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`UPDATE reservations SET status='Disponible',released_at=now(),release_reason='requester_cancelled'
+        WHERE operation_id=$1`, [id]);
+      await client.query(`UPDATE operations SET status='Cancelada',cancelled_at=now(),cancelled_by=$2,
+        cancellation_reason='requester_cancelled' WHERE id=$1`, [id, requester]);
+      await client.query('COMMIT');
+    } finally {
+      await client.query('ROLLBACK'); client.release();
+    }
+    expect((await db.query('SELECT status FROM operations WHERE id=$1', [id])).rows[0].status).toBe('Cancelada');
+    expect((await db.query('SELECT status FROM reservations WHERE operation_id=$1', [id])).rows[0].status).toBe('Disponible');
   });
 
   it('rejects null statuses, invalid release metadata, and later snapshot edits', async () => {

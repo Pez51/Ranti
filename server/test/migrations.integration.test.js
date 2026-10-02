@@ -10,7 +10,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 const enabled = process.env.RANTI_EPHEMERAL_DB === '1' && !!process.env.TEST_DATABASE_URL;
 const allMigrations = ['001_init.sql', '002_foundations.sql', '003_identity_publications.sql',
-  '004_publication_image_positions.sql', '005_operation_status_values.sql', '006_operations_reservations.sql'];
+  '004_publication_image_positions.sql', '005_operation_status_values.sql', '006_operations_reservations.sql',
+  '007_sale_reservation_reconciliation.sql'];
 describe.skipIf(!enabled)('Migraciones con PostgreSQL temporal real', () => {
   let admin;
   let db;
@@ -103,7 +104,8 @@ describe.skipIf(!enabled)('Migraciones con PostgreSQL temporal real', () => {
         { name: '003_identity_publications.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) },
         { name: '004_publication_image_positions.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) },
         { name: '005_operation_status_values.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) },
-        { name: '006_operations_reservations.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) }]);
+        { name: '006_operations_reservations.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) },
+        { name: '007_sale_reservation_reconciliation.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) }]);
     expect((await db.query("SELECT to_regclass('outbox_events') AS name")).rows[0].name).toBe('outbox_events');
     expect(await runMigrations(db, { adoptBaseline: true }))
       .toEqual({ applied: [], skipped: allMigrations });

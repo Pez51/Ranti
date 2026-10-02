@@ -22,6 +22,8 @@ export const acceptOperation = handle(async (req, res) =>
 export const rejectOperation = handle(async (req, res) =>
   res.json({ operation: await operations.decideOperation(pool, req.user.id, req.params.id,
     { ...req.body, decision: 'reject' }) }));
+export const cancelOperation = handle(async (req, res) =>
+  res.json({ operation: await operations.cancelOperation(pool, req.user.id, req.params.id, req.body) }));
 
 // 2. Confirmar Entrega Física (El Oferente ingresa el OTP)
 export const confirmDelivery = async (req, res) => {

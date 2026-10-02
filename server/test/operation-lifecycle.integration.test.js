@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+const execFileAsync = promisify(execFile);
 
 const enabled = process.env.RANTI_EPHEMERAL_DB === '1' && !!process.env.TEST_DATABASE_URL;
 describe.skipIf(!enabled)('pending operation requests on disposable PostgreSQL', () => {
@@ -235,6 +239,149 @@ describe.skipIf(!enabled)('pending operation requests on disposable PostgreSQL',
     expect((await request(app).post(`/api/operations/${created.id}/reject`).set(auth(owner)).send({ reason: 'Otra razón' })).status).toBe(200);
     expect((await request(app).post(`/api/operations/${created.id}/accept`).set(auth(owner)).send({})).status).toBe(409);
     expect((await effects(created.id)).audit).toHaveLength(before.audit.length);
+  });
+  it('cancels a pending request once without creating a reservation or leaking its reason into effects', async () => {
+    const pub = await publication(); const created = await service.requestOperation(db, requester, saleTerms(pub));
+    const url = `/api/operations/${created.id}/cancel`;
+    const response = await request(app).post(url).set(auth(requester)).send({ reason: '  private reason  ' });
+    expect(response.status).toBe(200);
+    expect(response.body.operation).toMatchObject({ status: 'Cancelada', cancellation_reason: 'private reason' });
+    expect((await db.query('SELECT cancelled_by,accepted_at FROM operations WHERE id=$1', [created.id])).rows[0])
+      .toEqual({ cancelled_by: requester, accepted_at: null });
+    expect((await db.query('SELECT id FROM reservations WHERE operation_id=$1', [created.id])).rowCount).toBe(0);
+    const before = await effects(created.id);
+    expect(before.audit.map(row => row.action)).toEqual(['operation.requested', 'operation.cancelled']);
+    expect(before.outbox.map(row => row.event_type)).toEqual(['operation.requested', 'operation.cancelled']);
+    expect(JSON.stringify(before)).not.toContain('private reason');
+    expect((await request(app).post(url).set(auth(requester)).send({ reason: 'another reason' })).status).toBe(200);
+    expect(await effects(created.id)).toEqual(before);
+  });
+  it('releases an accepted reservation on cancellation and permits a later acceptance', async () => {
+    const pub = await publication();
+    const first = await service.requestOperation(db, requester, saleTerms(pub));
+    const second = await service.requestOperation(db, requester, saleTerms(pub));
+    await service.decideOperation(db, owner, first.id, { decision: 'accept' });
+    const cancelled = await service.cancelOperation(db, requester, first.id, { reason: 'Changed mind' });
+    expect(cancelled.status).toBe('Cancelada');
+    expect((await db.query('SELECT status,released_at,release_reason FROM reservations WHERE operation_id=$1', [first.id])).rows[0])
+      .toMatchObject({ status: 'Disponible', release_reason: 'requester_cancelled', released_at: expect.any(Date) });
+    expect((await service.decideOperation(db, owner, second.id, { decision: 'accept' })).status).toBe('Aceptada');
+    expect((await db.query('SELECT id FROM reservations WHERE operation_id=$1', [first.id])).rowCount).toBe(1);
+    expect((await effects(first.id)).audit.map(row => row.action)).toEqual([
+      'operation.requested', 'operation.accepted', 'operation.cancelled']);
+  });
+  it('denies owner and foreign cancellation, rejects later states, and retains reversal reservations', async () => {
+    const pub = await publication(); const created = await service.requestOperation(db, requester, saleTerms(pub));
+    for (const actor of [owner, stranger])
+      await expect(service.cancelOperation(db, actor, created.id, { reason: 'No' })).rejects.toMatchObject({ status: 403 });
+    for (const status of ['Pendiente de pago/garantía', 'Lista para entrega']) {
+      const advanced = await service.requestOperation(db, requester, saleTerms(await publication()));
+      await service.decideOperation(db, owner, advanced.id, { decision: 'accept' });
+      await db.query('UPDATE operations SET status=$2 WHERE id=$1', [advanced.id, status]);
+      const reversal = await service.cancelOperation(db, requester, advanced.id, { reason: 'Reverse' });
+      expect(reversal.status).toBe('Cancelación en reversión');
+      expect((await db.query('SELECT status FROM reservations WHERE operation_id=$1', [advanced.id])).rows[0].status)
+        .toBe('Reservada/Bloqueada');
+      expect((await service.cancelOperation(db, requester, advanced.id, { reason: 'Again' })).status)
+        .toBe('Cancelación en reversión');
+      expect((await effects(advanced.id)).audit.map(row => row.action))
+        .toEqual(['operation.requested', 'operation.accepted', 'operation.cancellation_reversal_requested']);
+    }
+    expect((await db.query('SELECT status FROM operations WHERE id=$1', [created.id])).rows[0].status).toBe('Pendiente');
+    const later = await service.requestOperation(db, requester, saleTerms(await publication()));
+    await service.decideOperation(db, owner, later.id, { decision: 'accept' });
+    await db.query("UPDATE operations SET status='Entregada/Activa' WHERE id=$1", [later.id]);
+    await expect(service.cancelOperation(db, requester, later.id, { reason: 'Late' })).rejects.toMatchObject({ status: 409 });
+  });
+  it('expires pending cancellation lazily and keeps one terminal effect set', async () => {
+    const pub = await publication(); const created = await service.requestOperation(db, requester, saleTerms(pub));
+    await db.query("UPDATE operations SET request_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1", [created.id]);
+    await expect(service.cancelOperation(db, requester, created.id, { reason: 'Late' })).rejects.toMatchObject({ status: 409 });
+    expect((await db.query('SELECT status,decision_reason FROM operations WHERE id=$1', [created.id])).rows[0])
+      .toEqual({ status: 'Expirada', decision_reason: 'request_expired' });
+    await expect(service.cancelOperation(db, requester, created.id, { reason: 'Late' })).rejects.toMatchObject({ status: 409 });
+    expect((await effects(created.id)).audit.map(row => row.action)).toEqual(['operation.requested', 'operation.expired']);
+  });
+  it('expires a bounded batch with an injected clock and safely retries', async () => {
+    const pub = await publication();
+    const ids = await Promise.all(Array.from({ length: 3 }, async () =>
+      (await service.requestOperation(db, requester, saleTerms(pub))).id));
+    const now = new Date('2026-01-02T00:00:00.000Z');
+    await db.query('UPDATE operations SET request_expires_at=$2 WHERE id=ANY($1::uuid[])', [ids, new Date('2026-01-01T00:00:00.000Z')]);
+    const first = await service.expirePendingOperations(db, { now, limit: 2, workerId: 'worker-a' });
+    expect(first).toHaveLength(2);
+    expect((await db.query("SELECT COUNT(*)::int AS count FROM operations WHERE id=ANY($1::uuid[]) AND status='Expirada'", [ids])).rows[0].count).toBe(2);
+    const second = await service.expirePendingOperations(db, { now, limit: 2, workerId: 'worker-a' });
+    expect(second).toHaveLength(1);
+    expect(await service.expirePendingOperations(db, { now, limit: 2, workerId: 'worker-a' })).toHaveLength(0);
+    for (const id of ids) expect((await effects(id)).outbox.map(row => row.event_type))
+      .toEqual(['operation.requested', 'operation.expired']);
+  });
+  it('lets competing workers claim disjoint expired operations and skip an externally locked row', async () => {
+    const pub = await publication();
+    const ids = await Promise.all(Array.from({ length: 3 }, async () =>
+      (await service.requestOperation(db, requester, saleTerms(pub))).id));
+    const now = new Date('2026-01-02T00:00:00.000Z');
+    await db.query('UPDATE operations SET request_expires_at=$2 WHERE id=ANY($1::uuid[])',
+      [ids, new Date('2026-01-01T00:00:00.000Z')]);
+    const blocker = await db.connect(); await blocker.query('BEGIN');
+    await blocker.query('SELECT id FROM operations WHERE id=$1 FOR UPDATE', [ids[0]]);
+    try {
+      const claimed = await Promise.all(['worker-b', 'worker-c'].map(workerId =>
+        service.expirePendingOperations(db, { now, limit: 1, workerId })));
+      expect(claimed.flat()).toHaveLength(2);
+      expect(new Set(claimed.flat()).size).toBe(2);
+      expect(claimed.flat()).not.toContain(ids[0]);
+      expect((await db.query('SELECT status FROM operations WHERE id=$1', [ids[0]])).rows[0].status).toBe('Pendiente');
+    } finally { await blocker.query('ROLLBACK'); blocker.release(); }
+    expect(await service.expirePendingOperations(db, { now, limit: 1, workerId: 'worker-d' })).toEqual([ids[0]]);
+    for (const id of ids) expect((await effects(id)).audit.map(row => row.action))
+      .toEqual(['operation.requested', 'operation.expired']);
+  });
+  it('runs the expiry job command against the configured database', async () => {
+    const pub = await publication(); const created = await service.requestOperation(db, requester, saleTerms(pub));
+    await db.query("UPDATE operations SET request_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1", [created.id]);
+    const url = new URL(process.env.TEST_DATABASE_URL); url.pathname = `/${databaseName}`;
+    const { stdout } = await execFileAsync(process.execPath, ['src/jobs/expire-operations.js'], {
+      cwd: new URL('../', import.meta.url), env: { ...process.env, DATABASE_URL: url.href },
+    });
+    expect(stdout).toMatch(/Expired [1-9][0-9]* operation requests\./);
+    expect((await db.query('SELECT status FROM operations WHERE id=$1', [created.id])).rows[0].status).toBe('Expirada');
+    expect((await effects(created.id)).outbox.map(row => row.event_type)).toEqual(['operation.requested', 'operation.expired']);
+  });
+  it.each(['audit_logs', 'outbox_events'])('rolls accepted cancellation and release back if %s fails', async table => {
+    const pub = await publication(); const created = await service.requestOperation(db, requester, saleTerms(pub));
+    await service.decideOperation(db, owner, created.id, { decision: 'accept' });
+    const before = await effects(created.id);
+    const constraint = `cancel_${randomUUID().replaceAll('-', '')}`;
+    const check = table === 'audit_logs' ? "action <> 'operation.cancelled'" : "event_type <> 'operation.cancelled'";
+    await db.query(`ALTER TABLE ${table} ADD CONSTRAINT ${constraint} CHECK (${check}) NOT VALID`);
+    try {
+      await expect(service.cancelOperation(db, requester, created.id, { reason: 'Private' })).rejects.toMatchObject({
+        status: 500, code: 'INTERNAL_ERROR', cause: { code: '23514', constraint },
+      });
+      expect((await db.query('SELECT status,cancelled_at FROM operations WHERE id=$1', [created.id])).rows[0])
+        .toEqual({ status: 'Aceptada', cancelled_at: null });
+      expect((await db.query('SELECT status,released_at FROM reservations WHERE operation_id=$1', [created.id])).rows[0])
+        .toEqual({ status: 'Reservada/Bloqueada', released_at: null });
+      expect(await effects(created.id)).toEqual(before);
+    } finally { await db.query(`ALTER TABLE ${table} DROP CONSTRAINT ${constraint}`); }
+  });
+  it('serializes concurrent acceptance and requester cancellation into one released or absent reservation', async () => {
+    const pub = await publication(); const created = await service.requestOperation(db, requester, saleTerms(pub));
+    const outcomes = await Promise.all([
+      service.decideOperation(db, owner, created.id, { decision: 'accept' }).then(() => 200, error => error.status),
+      service.cancelOperation(db, requester, created.id, { reason: 'Changed mind' }).then(() => 200, error => error.status),
+    ]);
+    expect(outcomes[1]).toBe(200);
+    expect([200, 409]).toContain(outcomes[0]);
+    expect((await db.query('SELECT status FROM operations WHERE id=$1', [created.id])).rows[0].status).toBe('Cancelada');
+    const reservations = (await db.query('SELECT status,released_at FROM reservations WHERE operation_id=$1', [created.id])).rows;
+    expect(reservations).toHaveLength(outcomes[0] === 200 ? 1 : 0);
+    if (reservations.length) expect(reservations[0]).toMatchObject({ status: 'Disponible', released_at: expect.any(Date) });
+    expect((await effects(created.id)).audit.map(row => row.action)).toEqual(outcomes[0] === 200
+      ? ['operation.requested', 'operation.accepted', 'operation.cancelled']
+      : ['operation.requested', 'operation.cancelled']);
   });
   it('allows only the current verified owner to decide', async () => {
     const pub = await publication(); const created = await service.requestOperation(db, requester, saleTerms(pub));

@@ -4,7 +4,7 @@ import { appendAudit } from '../audit/audit.repository.js';
 import { enqueueOutboxEvent } from '../outbox/outbox.repository.js';
 import { requireCurrentUser } from '../users/profile.service.js';
 import { authorizeTransition, buildContractSnapshot, parseDecision, parseOperationRequest,
-  publicOperation, validateRequestedTerms } from './operation.policy.js';
+  parseCancellation, publicOperation, validateRequestedTerms } from './operation.policy.js';
 import { env } from '../../config/env.js';
 
 const fail = (status, code, message) => new AppError({ status, code, message });
@@ -158,6 +158,127 @@ async function decisionEffects(client, operation, previousStatus, status, actorI
     deduplicationKey: `${eventType}:${operation.id}` });
 }
 
+async function expireLockedOperation(client, operation, now) {
+  const rule = await transitionRule(client, 'Pendiente', 'Expirada', 'system', 'expired_request');
+  authorizeTransition(rule, { operation, actorId: null, now });
+  await client.query(`UPDATE operations SET status='Expirada',decided_at=$2,decided_by=NULL,
+    decision_reason='request_expired',updated_at=$2 WHERE id=$1`, [operation.id, now]);
+  await decisionEffects(client, operation, 'Pendiente', 'Expirada', null, 'request_expired');
+}
+
+function cancellationEffectsStatus(status) {
+  if (status === 'Cancelada') return 'operation.cancelled';
+  if (status === 'Cancelación en reversión') return 'operation.cancellation_reversal_requested';
+  throw conflict();
+}
+
+async function cancellationEffects(client, operation, status, actorId) {
+  const eventType = cancellationEffectsStatus(status);
+  const summary = { status, publication_id: operation.publication_id,
+    requester_id: operation.demandante_id, owner_id: operation.oferente_id };
+  await appendAudit(client, { actorId, action: eventType, entityType: 'operation', entityId: operation.id,
+    oldValues: { status: operation.status }, newValues: summary });
+  await enqueueOutboxEvent(client, { aggregateType: 'operation', aggregateId: operation.id,
+    eventType, payload: { operationId: operation.id, ...summary },
+    deduplicationKey: `${eventType}:${operation.id}` });
+}
+
+export async function cancelOperation(db, actorId, operationId, input) {
+  uuid(actorId); uuid(operationId);
+  const { reason } = parseCancellation(input);
+  const discovered = (await db.query(`SELECT o.publication_id,o.demandante_id,o.oferente_id,p.owner_id
+    FROM operations o JOIN publications p ON p.id=o.publication_id WHERE o.id=$1`, [operationId])).rows[0];
+  if (!discovered) throw missing();
+  const outcome = await transaction(db, async client => {
+    for (const id of [...new Set([actorId, discovered.demandante_id, discovered.oferente_id,
+      discovered.owner_id])].sort()) {
+      const user = (await client.query('SELECT id,status,verification_status FROM users WHERE id=$1 FOR NO KEY UPDATE', [id])).rows[0];
+      if (id === actorId || id === discovered.demandante_id || id === discovered.owner_id) requireCurrentUser(user);
+    }
+    const publication = (await client.query('SELECT * FROM publications WHERE id=$1 FOR UPDATE',
+      [discovered.publication_id])).rows[0];
+    if (!publication) throw missing();
+    const operations = (await client.query('SELECT * FROM operations WHERE publication_id=$1 ORDER BY id FOR UPDATE',
+      [discovered.publication_id])).rows;
+    const operation = operations.find(row => row.id === operationId);
+    if (!operation || operation.publication_id !== discovered.publication_id ||
+      operation.demandante_id !== discovered.demandante_id ||
+      operation.oferente_id !== discovered.oferente_id || publication.owner_id !== discovered.owner_id) throw conflict();
+    if (actorId !== operation.demandante_id) throw forbidden();
+    const hasEconomicMovement = (await client.query('SELECT 1 FROM transactions WHERE operation_id=$1 LIMIT 1',
+      [operationId])).rowCount > 0;
+    const reservations = (await client.query('SELECT * FROM reservations WHERE publication_id=$1 ORDER BY id FOR UPDATE',
+      [publication.id])).rows;
+    if (['Cancelada', 'Cancelación en reversión'].includes(operation.status)) {
+      const row = (await client.query(`${projection} WHERE o.id=$1`, [operationId])).rows[0];
+      return { operation: projected(row, actorId) };
+    }
+    if (!['Pendiente', 'Aceptada', 'Pendiente de pago/garantía', 'Lista para entrega'].includes(operation.status)) throw conflict();
+    const now = (await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
+    if (operation.status === 'Pendiente' && now >= operation.request_expires_at) {
+      await expireLockedOperation(client, operation, now);
+      return { responseConflict: true };
+    }
+    const reversal = ['Pendiente de pago/garantía', 'Lista para entrega'].includes(operation.status);
+    const status = reversal ? 'Cancelación en reversión' : 'Cancelada';
+    const precondition = operation.status === 'Pendiente' ? 'pending_request' :
+      reversal ? 'pre_delivery' : 'pre_economic';
+    const rule = await transitionRule(client, operation.status, status, 'requester', precondition);
+    const reservation = reservations.find(row => row.operation_id === operationId);
+    if ((operation.status === 'Pendiente' && reservation) ||
+      (operation.status !== 'Pendiente' && (!reservation || reservation.status === 'Disponible'))) throw conflict();
+    const effect = authorizeTransition(rule, { operation, actorId, now,
+      hasEconomicMovement, delivered: false });
+    if (effect.releaseReservation) await client.query(`UPDATE reservations
+      SET status='Disponible',released_at=$2,release_reason='requester_cancelled'
+      WHERE operation_id=$1`, [operationId, now]);
+    await client.query(`UPDATE operations SET status=$2,cancelled_at=$3,cancelled_by=$4,
+      cancellation_reason=$5,updated_at=$3 WHERE id=$1`, [operationId, status, now, actorId, reason]);
+    await cancellationEffects(client, operation, status, actorId);
+    const row = (await client.query(`${projection} WHERE o.id=$1`, [operationId])).rows[0];
+    return { operation: projected(row, actorId) };
+  });
+  if (outcome.responseConflict) throw conflict();
+  return outcome.operation;
+}
+
+export async function expirePendingOperations(db, { now = new Date(), limit = 100, workerId } = {}) {
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime()) ||
+      !Number.isInteger(limit) || limit < 1 || limit > 1000 ||
+      typeof workerId !== 'string' || !workerId.trim() || workerId.length > 200) throw invalid();
+  return transaction(db, async client => {
+    const rows = (await client.query(`SELECT * FROM operations
+      WHERE status='Pendiente' AND request_expires_at<=$1 ORDER BY id LIMIT $2
+      FOR UPDATE SKIP LOCKED`, [now, limit])).rows;
+    for (const operation of rows) await expireLockedOperation(client, operation, now);
+    return rows.map(row => row.id);
+  });
+}
+
+export async function invalidateAffectedPendingOperations(client, publicationId, cause) {
+  if (!['publication_unavailable', 'contract_changed'].includes(cause)) throw invalid();
+  const publication = (await client.query('SELECT * FROM publications WHERE id=$1', [publicationId])).rows[0];
+  if (!publication) throw publicationMissing();
+  const operations = (await client.query(`SELECT * FROM operations WHERE publication_id=$1
+    ORDER BY id FOR UPDATE`, [publicationId])).rows;
+  const now = (await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
+  for (const operation of operations) {
+    if (operation.status !== 'Pendiente') continue;
+    if (now >= operation.request_expires_at) {
+      await expireLockedOperation(client, operation, now);
+      continue;
+    }
+    const rule = await transitionRule(client, 'Pendiente', 'Rechazada', 'owner', 'publication_invalidated');
+    const effect = authorizeTransition(rule, { operation, publication,
+      actorId: publication.owner_id, now });
+    if (effect.createReservation || effect.releaseReservation || effect.retainReservation) throw conflict();
+    await client.query(`UPDATE operations SET status='Rechazada',decided_at=$2,
+      decided_by=$3,decision_reason=$4,updated_at=$2 WHERE id=$1`,
+    [operation.id, now, publication.owner_id, cause]);
+    await decisionEffects(client, operation, 'Pendiente', 'Rechazada', publication.owner_id, cause);
+  }
+}
+
 function hasReservationConflict(reservations, operation) {
   const live = reservations.filter(row => ['Bloqueo Provisional', 'Reservada/Bloqueada', 'Activa/En uso'].includes(row.status));
   if (operation.modality === 'Venta') return live.some(row => row.start_date === null);
@@ -206,12 +327,13 @@ export async function decideOperation(db, ownerId, operationId, input) {
     }
     if (operation.status !== 'Pendiente') throw conflict();
     const now = (await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
+    if (now >= operation.request_expires_at) {
+      await expireLockedOperation(client, operation, now);
+      return { responseConflict: true };
+    }
     let status, decidedBy, decisionReason, acceptedAt = null, responseConflict = false;
     let precondition;
-    if (now >= operation.request_expires_at) {
-      status = 'Expirada'; decidedBy = null; decisionReason = 'request_expired';
-      precondition = 'expired_request'; responseConflict = true;
-    } else if (decision === 'accept' && (publication.status !== 'Activa' || changedContract(publication, operation))) {
+    if (decision === 'accept' && (publication.status !== 'Activa' || changedContract(publication, operation))) {
       status = 'Rechazada'; decidedBy = ownerId;
       decisionReason = publication.status !== 'Activa' ? 'publication_unavailable' : 'contract_changed';
       precondition = 'publication_invalidated'; responseConflict = true;
@@ -222,13 +344,11 @@ export async function decideOperation(db, ownerId, operationId, input) {
       status = 'Aceptada'; decidedBy = ownerId; decisionReason = null; acceptedAt = now;
       precondition = 'request_available';
     }
-    const rule = await transitionRule(client, 'Pendiente', status,
-      status === 'Expirada' ? 'system' : 'owner', precondition);
+    const rule = await transitionRule(client, 'Pendiente', status, 'owner', precondition);
     const reservationConflict = hasReservationConflict(reservations, operation);
     if (status === 'Aceptada' && operation.modality !== 'Venta' &&
       new Date(operation.start_date).getTime() < now.getTime()) throw conflict();
-    authorizeTransition(rule, { operation, publication,
-      actorId: status === 'Expirada' ? null : ownerId, now, reservationConflict });
+    authorizeTransition(rule, { operation, publication, actorId: ownerId, now, reservationConflict });
     const snapshot = status === 'Aceptada' ? buildContractSnapshot({ ...publication,
       contract_version: Number(publication.contract_version) }, operation, now) : null;
     await client.query(`UPDATE operations SET status=$2,decided_at=$3,decided_by=$4,decision_reason=$5,
@@ -238,7 +358,7 @@ export async function decideOperation(db, ownerId, operationId, input) {
       (publication_id,operation_id,start_date,end_date,status) VALUES ($1,$2,$3,$4,'Reservada/Bloqueada')`,
     [publication.id, operationId, operation.start_date, operation.end_date]);
     await decisionEffects(client, operation, 'Pendiente', status, decidedBy,
-      precondition === 'expired_request' || precondition === 'publication_invalidated' ? decisionReason : null);
+      precondition === 'publication_invalidated' ? decisionReason : null);
     const row = (await client.query(`${projection} WHERE o.id=$1`, [operationId])).rows[0];
     return { operation: projected(row, ownerId), responseConflict };
   });

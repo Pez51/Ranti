@@ -5,6 +5,7 @@ import { appendAudit } from '../audit/audit.repository.js';
 import { enqueueOutboxEvent } from '../outbox/outbox.repository.js';
 import { requireCurrentUser, validHttpsReference } from '../users/profile.service.js';
 import { evaluatePublicationRisk, money, dateValue, modalities } from './risk.policy.js';
+import { invalidateAffectedPendingOperations } from '../operations/operation.service.js';
 
 const fail = (status, code, message) => new AppError({ status, code, message });
 const invalid = () => fail(400, 'INVALID_INPUT', 'Datos inválidos.');
@@ -78,7 +79,7 @@ async function unblocked(client, id) {
   // Lock ALL operations: after waiting on a pending operation's transition,
   // PostgreSQL returns its committed state. Assess it while holding both locks.
   const { rows } = await client.query('SELECT id, status FROM operations WHERE publication_id=$1 ORDER BY id FOR UPDATE', [id]);
-  if (rows.some(row => !['Pendiente', 'Cancelada', 'Cerrada'].includes(row.status))) throw conflict();
+  if (rows.some(row => !['Pendiente', 'Cancelada', 'Rechazada', 'Expirada', 'Cerrada'].includes(row.status))) throw conflict();
 }
 
 function risk(row) {
@@ -171,7 +172,12 @@ export async function updatePublication(db, ownerId, id, input) {
       const result = validateReady(row); row.risk_level = result.level; row.risk_policy_version = result.policyVersion;
     } else if (row.risk_policy_version !== unsetModality) { try { row.risk_level = risk(row).level; } catch { row.risk_level = null; } }
     if (Object.hasOwn(patch, 'images')) await images(client, id, row.images);
-    const updated = await persist(client, row); await effects(client, ownerId, 'updated', before, updated); return updated;
+    const updated = await persist(client, row);
+    if (updated.contract_version !== before.contract_version)
+      await invalidateAffectedPendingOperations(client, id, 'contract_changed');
+    else if (before.status === 'Activa' && updated.status !== 'Activa')
+      await invalidateAffectedPendingOperations(client, id, 'publication_unavailable');
+    await effects(client, ownerId, 'updated', before, updated); return updated;
   });
 }
 
@@ -191,7 +197,10 @@ async function lifecycle(db, ownerId, id, action) {
       if (row.status === 'Pausada') return row;
       if (row.status !== 'Activa') throw conflict(); row.status = 'Pausada';
     } else row.status = 'Retirada';
-    const changed = await persist(client, row); await effects(client, ownerId, action, before, changed); return changed;
+    const changed = await persist(client, row);
+    if (before.status === 'Activa' && changed.status !== 'Activa')
+      await invalidateAffectedPendingOperations(client, id, 'publication_unavailable');
+    await effects(client, ownerId, action, before, changed); return changed;
   });
 }
 export const submitPublication = (db, ownerId, id) => lifecycle(db, ownerId, id, 'submit');

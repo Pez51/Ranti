@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const enabled = process.env.RANTI_EPHEMERAL_DB === '1' && !!process.env.TEST_DATABASE_URL;
 describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () => {
-  let db, cluster, databaseName, app, service, owner, other, admin;
+  let db, cluster, databaseName, app, service, operationService, owner, other, admin;
   const auth = id => ({ Authorization: `Bearer ${jwt.sign({ id }, process.env.JWT_SECRET)}` });
   const valid = { title: 'Microscopio único', description: 'Equipo de laboratorio', category: 'Ciencias',
     condition: 'Usado', modality: 'Venta', price: '25.00', images: ['https://images.example.test/photo'] };
@@ -36,6 +36,7 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
     vi.resetModules(); vi.doMock('../src/config/database.js', () => ({ default: db }));
     app = (await import('../src/app.js')).default;
     service = await import('../src/modules/publications/publication.service.js');
+    operationService = await import('../src/modules/operations/operation.service.js');
     owner = await user(); other = await user(); admin = await user('Administrador');
   });
   afterAll(async () => {
@@ -72,6 +73,114 @@ describe.skipIf(!enabled)('publication lifecycle on disposable PostgreSQL', () =
       await expect(service[action](db, owner, pub.id)).rejects.toMatchObject({ status: 409 });
     await expect(service.updatePublication(db, owner, pub.id, { title: 'Revive' })).rejects.toMatchObject({ status: 409 });
   });
+  it.each(['pausePublication', 'withdrawPublication'])('%s rejects pending requests in its publication transaction', async action => {
+    const pub = await create(); await submit(pub.id);
+    const pending = await operationService.requestOperation(db, other, { publication_id: pub.id,
+      requested_price: '25.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 });
+    await service[action](db, owner, pub.id);
+    expect((await db.query('SELECT status,decision_reason FROM operations WHERE id=$1', [pending.id])).rows[0])
+      .toEqual({ status: 'Rechazada', decision_reason: 'publication_unavailable' });
+    expect((await db.query('SELECT id FROM reservations WHERE operation_id=$1', [pending.id])).rowCount).toBe(0);
+    expect((await effects(pending.id)).audit.map(row => row.action)).toEqual(['operation.requested', 'operation.rejected']);
+  });
+  it('rejects pending requests after contractual edits but preserves them after image-only and no-op edits', async () => {
+    const pub = await create(); await submit(pub.id);
+    const pending = await operationService.requestOperation(db, other, { publication_id: pub.id,
+      requested_price: '25.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 });
+    await service.updatePublication(db, owner, pub.id, { images: ['https://images.example.test/new-photo'] });
+    expect((await row(pub.id)).contract_version).toBe('1');
+    expect((await db.query('SELECT status FROM operations WHERE id=$1', [pending.id])).rows[0].status).toBe('Pendiente');
+    await service.updatePublication(db, owner, pub.id, { title: valid.title });
+    expect((await row(pub.id)).contract_version).toBe('1');
+    expect((await db.query('SELECT status FROM operations WHERE id=$1', [pending.id])).rows[0].status).toBe('Pendiente');
+    await service.updatePublication(db, owner, pub.id, { title: 'Changed title' });
+    expect((await row(pub.id)).contract_version).toBe('2');
+    expect((await db.query('SELECT status,decision_reason FROM operations WHERE id=$1', [pending.id])).rows[0])
+      .toEqual({ status: 'Rechazada', decision_reason: 'contract_changed' });
+  });
+  it('rolls publication and every pending request back if a request outbox effect fails', async () => {
+    const pub = await create(); await submit(pub.id);
+    const pending = await Promise.all([1, 2].map(() => operationService.requestOperation(db, other, {
+      publication_id: pub.id, requested_price: '25.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 })));
+    const constraint = `invalidation_${randomUUID().replaceAll('-', '')}`;
+    await db.query(`ALTER TABLE outbox_events ADD CONSTRAINT ${constraint}
+      CHECK (event_type <> 'operation.rejected') NOT VALID`);
+    try {
+      await expect(service.pausePublication(db, owner, pub.id)).rejects.toMatchObject({ status: 500 });
+      expect((await row(pub.id)).status).toBe('Activa');
+      for (const op of pending) {
+        expect((await db.query('SELECT status FROM operations WHERE id=$1', [op.id])).rows[0].status).toBe('Pendiente');
+        expect((await effects(op.id)).audit.map(row => row.action)).toEqual(['operation.requested']);
+      }
+    } finally { await db.query(`ALTER TABLE outbox_events DROP CONSTRAINT ${constraint}`); }
+  });
+  it.each(['pause', 'contract'])('serializes %s mutation ahead of a waiting acceptance', async change => {
+    const pub = await create(); await submit(pub.id);
+    const pending = await operationService.requestOperation(db, other, { publication_id: pub.id,
+      requested_price: '25.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 });
+    const blocker = await db.connect(); await blocker.query('BEGIN');
+    await blocker.query('SELECT id FROM publications WHERE id=$1 FOR UPDATE', [pub.id]);
+    const mutation = change === 'pause' ? service.pausePublication(db, owner, pub.id) :
+      service.updatePublication(db, owner, pub.id, { title: 'Revised title' });
+    let acceptance;
+    try {
+      let waiting = false;
+      for (let i = 0; i < 100 && !waiting; i++) {
+        waiting = (await db.query(`SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
+          AND wait_event_type='Lock' AND query LIKE '%publications WHERE id=$1%'`)).rowCount > 0;
+        if (!waiting) await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(waiting).toBe(true);
+      acceptance = operationService.decideOperation(db, owner, pending.id, { decision: 'accept' })
+        .then(value => ({ value }), error => ({ error }));
+      await blocker.query('COMMIT');
+      await mutation;
+      expect((await acceptance).error).toMatchObject({ status: 409 });
+      expect((await db.query('SELECT status,decision_reason FROM operations WHERE id=$1', [pending.id])).rows[0])
+        .toEqual({ status: 'Rechazada', decision_reason: change === 'pause' ? 'publication_unavailable' : 'contract_changed' });
+      expect((await db.query('SELECT id FROM reservations WHERE operation_id=$1', [pending.id])).rowCount).toBe(0);
+    } finally { await blocker.query('ROLLBACK'); blocker.release(); await mutation; if (acceptance) await acceptance; }
+  });
+  it('completes worker expiry and publication pause within lock timeouts without leaking a transaction', async () => {
+    const pub = await create(); await submit(pub.id);
+    const pending = await operationService.requestOperation(db, other, { publication_id: pub.id,
+      requested_price: '25.00', requested_guarantee_amount: '0.00', requested_contract_version: 1 });
+    await db.query('UPDATE operations SET request_expires_at=$2 WHERE id=$1',
+      [pending.id, new Date('2026-01-01T00:00:00.000Z')]);
+    const suffix = randomUUID().replaceAll('-', '');
+    await db.query(`CREATE FUNCTION slow_expiry_${suffix}() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN PERFORM pg_sleep(0.5); RETURN NEW; END $$`);
+    await db.query(`CREATE TRIGGER slow_expiry_${suffix} BEFORE INSERT ON audit_logs
+      FOR EACH ROW WHEN (NEW.action = 'operation.expired') EXECUTE FUNCTION slow_expiry_${suffix}()`);
+    const workerClient = await db.connect(); const pauseClient = await db.connect();
+    await workerClient.query("SET lock_timeout='2s'"); await pauseClient.query("SET lock_timeout='2s'");
+    const workerDb = { connect: async () => ({ query: workerClient.query.bind(workerClient), release() {} }) };
+    const pauseDb = { connect: async () => ({ query: pauseClient.query.bind(pauseClient), release() {} }) };
+    let worker, pause;
+    try {
+      worker = operationService.expirePendingOperations(workerDb, {
+        now: new Date('2026-01-02T00:00:00.000Z'), limit: 1, workerId: 'race-worker' });
+      let inAudit = false;
+      for (let i = 0; i < 100 && !inAudit; i++) {
+        inAudit = (await db.query(`SELECT 1 FROM pg_stat_activity WHERE pid=$1 AND state='active'
+          AND query LIKE '%INSERT INTO audit_logs%'`, [workerClient.processID])).rowCount > 0;
+        if (!inAudit) await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(inAudit).toBe(true);
+      pause = service.pausePublication(pauseDb, owner, pub.id);
+      expect(await worker).toEqual([pending.id]);
+      expect((await pause).status).toBe('Pausada');
+      expect((await db.query('SELECT status FROM operations WHERE id=$1', [pending.id])).rows[0].status).toBe('Expirada');
+      expect((await effects(pending.id)).audit.map(row => row.action)).toEqual(['operation.requested', 'operation.expired']);
+      expect((await db.query("SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction'")).rows).toEqual([]);
+    } finally {
+      if (worker) await worker; if (pause) await pause;
+      await workerClient.query('RESET lock_timeout'); await pauseClient.query('RESET lock_timeout');
+      workerClient.release(); pauseClient.release();
+      await db.query(`DROP TRIGGER slow_expiry_${suffix} ON audit_logs`);
+      await db.query(`DROP FUNCTION slow_expiry_${suffix}()`);
+    }
+  }, 10000);
   it('requires explicit modality selection for an incomplete draft even when the chosen value matches its sentinel', async () => {
     const { modality, ...incomplete } = valid;
     const pub = await service.createPublication(db, owner, incomplete);

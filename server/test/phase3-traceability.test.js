@@ -19,6 +19,7 @@ describe('Phase 3 operations and reservations traceability', () => {
   it('documents migrations, availability, lifecycle, and honest later-phase seams', () => {
     const doc = read('README.md');
     for (const term of ['005_operation_status_values.sql', '006_operations_reservations.sql',
+      '007_sale_reservation_reconciliation.sql', 'ventas heredadas',
       'btree_gist', 'SHARE ROW EXCLUSIVE', 'reconciliación', '[inicio, fin)',
       'Bloqueo Provisional', 'Reservada/Bloqueada', 'Activa/En uso',
       'Pendiente', 'Aceptada', 'Cancelación en reversión', 'Disponible',

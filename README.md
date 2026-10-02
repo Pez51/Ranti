@@ -181,8 +181,8 @@ Resultados frescos hasta Fase 3, 2026-10-01:
 
 | Comando | Resultado |
 |---|---|
-| `npm test --prefix server` | 264 pruebas aprobadas, 240 omitidas por requerir PostgreSQL; 15 archivos aprobados, 10 omitidos. |
-| `powershell -ExecutionPolicy Bypass -File tools/test-postgres.ps1` | 504 pruebas aprobadas en 25 archivos, sin omitidas; clúster temporal detenido y limpiado. |
+| `npm test --prefix server` | 265 pruebas aprobadas, 240 omitidas por requerir PostgreSQL; 15 archivos aprobados, 10 omitidos. |
+| `powershell -ExecutionPolicy Bypass -File tools/test-postgres.ps1` | 505 pruebas aprobadas en 25 archivos, sin omitidas; clúster temporal detenido y limpiado. |
 | `npm test --prefix client` | 72 pruebas aprobadas en 11 archivos. |
 | `npm run lint --prefix client` | Salida 0. |
 | `npm run build --prefix client` | Salida 0; frontend y service worker generados. |
@@ -190,7 +190,7 @@ Resultados frescos hasta Fase 3, 2026-10-01:
 | Render BPMN | SVG de Fase 3 generado; vista PNG derivada inspeccionada. |
 | `git diff --check` | Sin errores. |
 
-Cada suite PostgreSQL productora posee una base privada dentro del clúster temporal mediante `server/test/helpers/disposable-database.js`. Esto impide que un `TRUNCATE` o un worker de una suite reclame eventos de otra. La verificación actual pasó 504/504 en paralelo.
+Cada suite PostgreSQL productora posee una base privada dentro del clúster temporal mediante `server/test/helpers/disposable-database.js`. Esto impide que un `TRUNCATE` o un worker de una suite reclame eventos de otra. La verificación actual pasó 505/505 en paralelo.
 
 No hay proveedor institucional real, carga binaria de evidencia ni almacén privado de objetos. Por confirmar: alta operativa de administradores, gobierno de términos/proveedores, retención de evidencia y despliegue del worker.
 

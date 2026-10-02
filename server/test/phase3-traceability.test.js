@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { BpmnModdle } from 'bpmn-moddle';
 import { describe, expect, it } from 'vitest';
 
 const root = new URL('../../', import.meta.url);
@@ -69,5 +70,44 @@ describe('Phase 3 operations and reservations traceability', () => {
       expect(xml).toContain(`bpmnElement="${match[1]}"`);
     expect(svg).toContain('<svg');
     expect(svg.length).toBeGreaterThan(1000);
+  });
+
+  it('routes validation and reservation errors through explicit exclusive gateways', async () => {
+    const xml = read(`docs/bpmn/${diagram}.bpmn`);
+    const { rootElement, warnings } = await new BpmnModdle().fromXML(xml);
+    expect(warnings).toEqual([]);
+    const processes = rootElement.rootElements.filter(element => element.$type === 'bpmn:Process');
+    const nodes = processes.flatMap(process => process.flowElements)
+      .filter(element => element.$type !== 'bpmn:SequenceFlow');
+    const byId = new Map(nodes.map(node => [node.id, node]));
+    expect(processes).toHaveLength(4);
+
+    const expectDecision = (taskId, gatewayId, outcomes) => {
+      const task = byId.get(taskId);
+      const gateway = byId.get(gatewayId);
+      expect(task, taskId).toBeDefined();
+      expect(gateway?.$type, gatewayId).toBe('bpmn:ExclusiveGateway');
+      expect(task.outgoing.map(flow => flow.targetRef.id), taskId).toEqual([gatewayId]);
+      expect(gateway.outgoing.map(flow => [flow.name, flow.targetRef.id]).sort(), gatewayId)
+        .toEqual(outcomes.sort());
+    };
+
+    expectDecision('Req_Terms', 'Req_TermsResult', [
+      ['Válido', 'Req_Save'], ['Inválido', 'Req_Invalid'],
+    ]);
+    expectDecision('Dec_Accept', 'Dec_InsertResult', [
+      ['Sin conflicto', 'Dec_Effects'], ['Constraint', 'Dec_Constraint'],
+    ]);
+    expect(byId.get('Dec_Commit').outgoing.map(flow => [flow.name, flow.targetRef.id]).sort())
+      .toEqual([['Sí', 'Dec_Result'], ['23505/23P01', 'Dec_Constraint'],
+        ['Otro error', 'Dec_Rollback']].sort());
+    expect(nodes.filter(node => ['bpmn:UserTask', 'bpmn:ServiceTask', 'bpmn:BusinessRuleTask'].includes(node.$type)
+      && (node.outgoing?.length ?? 0) > 1).map(node => node.id)).toEqual([]);
+
+    const drawn = new Set(rootElement.diagrams.flatMap(item => item.plane.planeElement)
+      .map(element => element.bpmnElement?.id).filter(Boolean));
+    for (const id of [...byId.keys(), 'Flow_Req_Terms_Req_TermsResult',
+      'Flow_Dec_Accept_Dec_InsertResult', 'Flow_Dec_Commit_Dec_Constraint'])
+      expect(drawn.has(id), id).toBe(true);
   });
 });

@@ -1,69 +1,63 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import pool from '../../config/database.js';
+import * as identityRepository from './identity.repository.js';
+import { AppError } from '../../shared/errors/app-error.js';
 
 export const registerUser = async (userData) => {
   const { email, password, role = 'Estudiante', academic_condition } = userData;
 
-  // 1. Regla de Negocio
   if (!email.endsWith('@estudiante.ucsm.edu.pe') && !email.endsWith('@ucsm.edu.pe')) {
-    const error = new Error('Solo se permiten correos institucionales válidos de la UCSM.');
-    error.statusCode = 400;
-    throw error;
+    throw new AppError({ 
+      status: 400, 
+      message: 'Solo se permiten correos institucionales válidos de la UCSM.' 
+    });
   }
 
-  // 2. Verificación de existencia
-  const userExists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-  if (userExists.rows.length > 0) {
-    const error = new Error('El correo ya está registrado.');
-    error.statusCode = 409;
-    throw error;
+  const existingUser = await identityRepository.findByEmail(email);
+  if (existingUser) {
+    throw new AppError({ 
+      status: 409, 
+      message: 'El correo ya está registrado.' 
+    });
   }
 
-  // 3. Encriptación
   const salt = await bcrypt.genSalt(10);
   const passwordHash = await bcrypt.hash(password, salt);
 
-  // 4. Inserción (Repositorio integrado por simplicidad)
-  const newUser = await pool.query(
-    `INSERT INTO users (email, password_hash, role, academic_condition) 
-     VALUES ($1, $2, $3, $4) RETURNING id, email, role, status`,
-    [email, passwordHash, role, academic_condition]
-  );
+  const newUser = await identityRepository.createUser({
+    email, 
+    passwordHash, 
+    role, 
+    academic_condition
+  });
 
-  // 5. Generación de Token
   const token = jwt.sign(
-    { id: newUser.rows[0].id, role: newUser.rows[0].role },
+    { id: newUser.id, role: newUser.role },
     process.env.JWT_SECRET,
     { expiresIn: '24h' }
   );
 
-  return { token, user: newUser.rows[0] };
+  return { token, user: newUser };
 };
 
 export const loginUser = async (credentials) => {
   const { email, password } = credentials;
 
-  const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-  if (userResult.rows.length === 0) {
-    const error = new Error('Credenciales inválidas.');
-    error.statusCode = 401;
-    throw error;
+  const user = await identityRepository.findByEmail(email);
+  if (!user) {
+    throw new AppError({ status: 401, message: 'Credenciales inválidas.' });
   }
 
-  const user = userResult.rows[0];
-
   if (user.status === 'Suspendida') {
-    const error = new Error('Tu cuenta ha sido suspendida por la administración.');
-    error.statusCode = 403;
-    throw error;
+    throw new AppError({ 
+      status: 403, 
+      message: 'Tu cuenta ha sido suspendida por la administración.' 
+    });
   }
 
   const isValidPassword = await bcrypt.compare(password, user.password_hash);
   if (!isValidPassword) {
-    const error = new Error('Credenciales inválidas.');
-    error.statusCode = 401;
-    throw error;
+    throw new AppError({ status: 401, message: 'Credenciales inválidas.' });
   }
 
   const token = jwt.sign(
@@ -74,34 +68,28 @@ export const loginUser = async (credentials) => {
 
   return {
     token,
-    user: { id: user.id, email: user.email, role: user.role, reputation: user.reputation_score }
+    user: { 
+      id: user.id, 
+      email: user.email, 
+      role: user.role, 
+      reputation: user.reputation_score 
+    }
   };
 };
 
-// ... (mantén tu código actual de registerUser y loginUser arriba) ...
-
 export const confirmUser = async (data) => {
-  const { email, code } = data; // Asumiendo que validas con un código OTP enviado al correo
+  const { email, code } = data; 
 
-  // 1. Buscar al usuario
-  const userResult = await pool.query('SELECT id, status FROM users WHERE email = $1', [email]);
-  if (userResult.rows.length === 0) {
-    const error = new Error('Usuario no encontrado.');
-    error.statusCode = 404;
-    throw error;
+  const user = await identityRepository.findByEmail(email);
+  if (!user) {
+    throw new AppError({ status: 404, message: 'Usuario no encontrado.' });
   }
-
-  const user = userResult.rows[0];
 
   if (user.status === 'Activa') {
     return { message: 'La cuenta ya se encuentra verificada y activa.' };
   }
 
-  // Aquí iría tu lógica real de validación del código (ej. contra una tabla de tokens)
-  // if (codigoInvalido) throw Error...
-
-  // 2. Actualizar el estado del usuario a "Activa"
-  await pool.query("UPDATE users SET status = 'Activa' WHERE email = $1", [email]);
+  await identityRepository.updateUserStatus(email, 'Activa');
 
   return { message: 'Cuenta confirmada exitosamente. Ya puedes iniciar sesión.' };
 };
@@ -109,19 +97,14 @@ export const confirmUser = async (data) => {
 export const resendVerification = async (data) => {
   const { email } = data;
 
-  const userResult = await pool.query('SELECT id, status FROM users WHERE email = $1', [email]);
-  if (userResult.rows.length === 0) {
-    const error = new Error('Usuario no encontrado.');
-    error.statusCode = 404;
-    throw error;
+  const user = await identityRepository.findByEmail(email);
+  if (!user) {
+    throw new AppError({ status: 404, message: 'Usuario no encontrado.' });
   }
 
-  if (userResult.rows[0].status === 'Activa') {
+  if (user.status === 'Activa') {
     return { message: 'Esta cuenta ya está activa, no requiere verificación.' };
   }
-
-  // Aquí iría la integración con tu worker (Outbox) o Nodemailer para reenviar el correo
-  // await outboxRepository.saveEvent('EmailVerification', { email, newCode });
-
+  
   return { message: 'Se ha reenviado el código de verificación a tu correo institucional.' };
 };

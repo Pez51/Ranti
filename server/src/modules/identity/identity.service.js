@@ -6,13 +6,6 @@ import { AppError } from '../../shared/errors/app-error.js';
 export const registerUser = async (userData) => {
   const { email, password, role = 'Estudiante', academic_condition } = userData;
 
-  if (!email.endsWith('@estudiante.ucsm.edu.pe') && !email.endsWith('@ucsm.edu.pe')) {
-    throw new AppError({ 
-      status: 400, 
-      message: 'Solo se permiten correos institucionales válidos de la UCSM.' 
-    });
-  }
-
   const existingUser = await identityRepository.findByEmail(email);
   if (existingUser) {
     throw new AppError({ 

@@ -1,370 +1,171 @@
-import { z } from 'zod';
-import { AppError } from '../../shared/errors/app-error.js';
-import { appendAudit } from '../audit/audit.repository.js';
-import { enqueueOutboxEvent } from '../outbox/outbox.repository.js';
-import { requireCurrentUser } from '../users/profile.service.js';
-import { authorizeTransition, buildContractSnapshot, parseDecision, parseOperationRequest,
-  parseCancellation, publicOperation, validateRequestedTerms } from './operation.policy.js';
-import { env } from '../../config/env.js';
+import pool from '../../config/database.js';
 
-const fail = (status, code, message) => new AppError({ status, code, message });
-const invalid = () => fail(400, 'INVALID_INPUT', 'Datos inválidos.');
-const missing = () => fail(404, 'OPERATION_NOT_FOUND', 'Operación no encontrada.');
-const publicationMissing = () => fail(404, 'PUBLICATION_NOT_FOUND', 'Publicación no encontrada.');
-const unavailable = () => fail(409, 'PUBLICATION_UNAVAILABLE', 'La publicación no está disponible.');
-const conflict = () => fail(409, 'OPERATION_CONFLICT', 'El estado actual impide esta acción.');
-const forbidden = () => fail(403, 'FORBIDDEN', 'Acceso denegado.');
-const uuid = value => { if (!z.uuid().safeParse(value).success) throw invalid(); return value; };
+// 1. Crear una nueva operación (Reserva / Compra)
+export const createOperation = async (operationData, userId) => {
+  const { publication_id, start_date, end_date } = operationData;
+  const client = await pool.connect();
 
-function reservationConstraint(error) {
-  return (error?.code === '23505' && ['reservations_one_live_sale_per_publication', 'reservations_operation_key']
-    .includes(error.constraint)) || (error?.code === '23P01' && error.constraint === 'reservations_live_interval_exclusion');
-}
-
-async function transaction(db, work) {
-  let client, releaseError;
   try {
-    client = await db.connect(); await client.query('BEGIN');
-    const result = await work(client); await client.query('COMMIT'); return result;
+    await client.query('BEGIN'); // Iniciar bloqueo transaccional (ACID)
+
+    // A. Obtener datos actuales de la publicación (Bloqueo FOR UPDATE)
+    const pubQuery = `SELECT * FROM publications WHERE id = $1 FOR UPDATE`;
+    const { rows: pubRows } = await client.query(pubQuery, [publication_id]);
+
+    if (pubRows.length === 0) {
+      const error = new Error('Publicación no encontrada.');
+      error.statusCode = 404;
+      throw error;
+    }
+    const publication = pubRows[0];
+
+    // Validar que el dueño no intente alquilar su propio equipo
+    if (publication.owner_id === userId) {
+      const error = new Error('No puedes reservar tu propia publicación.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // B. Validación de Disponibilidad (Solapamiento de fechas)
+    if (publication.modality !== 'Venta' && start_date && end_date) {
+      const overlapQuery = `
+        SELECT id FROM reservations 
+        WHERE publication_id = $1 
+        AND status IN ('Bloqueo Provisional', 'Reservada/Bloqueada', 'Activa/En uso')
+        AND (start_date < $3 AND end_date > $2)
+      `;
+      const overlapResult = await client.query(overlapQuery, [publication_id, start_date, end_date]);
+      
+      if (overlapResult.rows.length > 0) {
+        const error = new Error('El equipo ya está reservado en esas fechas.');
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+
+    // C. Crear el Snapshot inmutable del contrato
+    const contractSnapshot = {
+      title: publication.title,
+      agreed_price: publication.price,
+      guarantee_amount: publication.guarantee_amount,
+      modality: publication.modality,
+      created_at: new Date().toISOString()
+    };
+
+    // D. Generar código OTP seguro (6 dígitos)
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // E. Insertar la Operación
+    const insertOpQuery = `
+      INSERT INTO operations 
+      (publication_id, demandante_id, oferente_id, modality, status, start_date, end_date, contract_snapshot, otp_code)
+      VALUES ($1, $2, $3, $4, 'Pendiente de pago/garantía', $5, $6, $7, $8)
+      RETURNING id, status, otp_code
+    `;
+    const opValues = [
+      publication_id, userId, publication.owner_id, publication.modality,
+      start_date || null, end_date || null, contractSnapshot, otpCode
+    ];
+    const { rows: newOp } = await client.query(insertOpQuery, opValues);
+    const operationId = newOp[0].id;
+
+    // F. Insertar en la tabla de reservas (Si aplica)
+    if (publication.modality !== 'Venta') {
+      const insertResQuery = `
+        INSERT INTO reservations (publication_id, operation_id, start_date, end_date)
+        VALUES ($1, $2, $3, $4)
+      `;
+      await client.query(insertResQuery, [publication_id, operationId, start_date, end_date]);
+    }
+
+    await client.query('COMMIT'); 
+
+    return {
+      message: 'Operación creada exitosamente. Procede al pago.',
+      operation_id: operationId,
+      status: newOp[0].status,
+      otp_code: otpCode 
+    };
+
   } catch (error) {
-    if (client) { try { await client.query('ROLLBACK'); } catch (rollbackError) { releaseError = rollbackError; } }
-    if (error instanceof AppError) throw error;
-    if (reservationConstraint(error)) throw conflict();
-    const internal = fail(500, 'INTERNAL_ERROR', 'Error interno del servidor.');
-    internal.cause = error;
-    throw internal;
-  } finally { client?.release(releaseError); }
-}
-
-const projection = `SELECT o.*, json_build_object('id',p.id,'title',p.title,
-  'primary_image',(SELECT image_url FROM publication_images WHERE publication_id=p.id AND is_primary=true
-    ORDER BY position LIMIT 1),'contract_version',p.contract_version) AS publication,
-  json_build_object('id',owner.id,'display_name',owner.display_name,
-    'reputation_score',owner.reputation_score,'operations_count',owner.operations_count) AS owner,
-  json_build_object('id',requester.id,'display_name',requester.display_name,
-    'reputation_score',requester.reputation_score,'operations_count',requester.operations_count) AS requester
-  FROM operations o JOIN publications p ON p.id=o.publication_id
-  JOIN users owner ON owner.id=o.oferente_id JOIN users requester ON requester.id=o.demandante_id`;
-
-function projected(row, actorId) {
-  // PostgreSQL bigint is returned as text; contract versions fit our safe input range.
-  row.requested_contract_version = Number(row.requested_contract_version);
-  row.publication.contract_version = Number(row.publication.contract_version);
-  return publicOperation(row, actorId);
-}
-
-async function currentActor(db, actorId) {
-  const row = (await db.query('SELECT id,status,verification_status FROM users WHERE id=$1', [uuid(actorId)])).rows[0];
-  return requireCurrentUser(row);
-}
-
-export async function requestOperation(db, actorId, input) {
-  uuid(actorId);
-  const request = parseOperationRequest(input);
-  // This read only discovers the current owner. Recheck after acquiring locks.
-  const discovered = (await db.query('SELECT owner_id FROM publications WHERE id=$1', [request.publication_id])).rows[0];
-  if (!discovered) throw publicationMissing();
-  return transaction(db, async client => {
-    const users = [actorId, discovered.owner_id].sort();
-    for (const id of users) {
-      const row = (await client.query('SELECT id,status,verification_status FROM users WHERE id=$1 FOR NO KEY UPDATE', [id])).rows[0];
-      requireCurrentUser(row);
-    }
-    const publication = (await client.query('SELECT * FROM publications WHERE id=$1 FOR UPDATE', [request.publication_id])).rows[0];
-    if (!publication) throw publicationMissing();
-    if (publication.owner_id !== discovered.owner_id) throw unavailable();
-    if (publication.owner_id === actorId) throw invalid();
-    if (publication.status !== 'Activa') throw unavailable();
-    const now = new Date();
-    validateRequestedTerms(publication, { ...request, requester_id: actorId }, now);
-    const created = (await client.query(`INSERT INTO operations
-      (publication_id,demandante_id,oferente_id,modality,status,start_date,end_date,
-       contract_snapshot,otp_code,requested_price,requested_guarantee_amount,requested_contract_version,request_expires_at)
-      VALUES ($1,$2,$3,$4,'Pendiente',$5,$6,NULL,NULL,$7,$8,$9,
-        clock_timestamp()+make_interval(hours => $10::int)) RETURNING id`,
-    [publication.id, actorId, publication.owner_id, publication.modality,
-      request.start_date ?? null, request.end_date ?? null, request.requested_price,
-      request.requested_guarantee_amount, request.requested_contract_version, env.OPERATION_REQUEST_TTL_HOURS])).rows[0];
-    const summary = { status: 'Pendiente', publication_id: publication.id, requester_id: actorId,
-      owner_id: publication.owner_id, contract_version: request.requested_contract_version };
-    await appendAudit(client, { actorId, action: 'operation.requested', entityType: 'operation', entityId: created.id,
-      newValues: summary });
-    await enqueueOutboxEvent(client, { aggregateType: 'operation', aggregateId: created.id,
-      eventType: 'operation.requested', payload: { operationId: created.id, ...summary },
-      deduplicationKey: `operation.requested:${created.id}` });
-    const row = (await client.query(`${projection} WHERE o.id=$1`, [created.id])).rows[0];
-    return projected(row, actorId);
-  });
-}
-
-function pageFilters(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input) ||
-      Object.keys(input).some(key => !['side', 'status', 'limit', 'offset'].includes(key))) throw invalid();
-  const side = input.side ?? 'requested';
-  if (!['requested', 'received'].includes(side)) throw invalid();
-  const statuses = ['Pendiente', 'Aceptada', 'Rechazada', 'Expirada', 'Cancelada',
-    'Cancelación en reversión', 'Pendiente de pago/garantía', 'Lista para entrega',
-    'Entregada/Activa', 'En cierre', 'Pendiente de resolución económica', 'Cerrada', 'En incidencia'];
-  if (input.status !== undefined && !statuses.includes(input.status)) throw invalid();
-  const integer = (value, fallback, min, max) => {
-    if (value === undefined) return fallback;
-    if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max) return value;
-    if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)) {
-      const parsed = Number(value); if (parsed >= min && parsed <= max) return parsed;
-    }
-    throw invalid();
-  };
-  return { side, status: input.status, limit: integer(input.limit, 20, 1, 100),
-    offset: integer(input.offset, 0, 0, 10000) };
-}
-
-export async function listParticipantOperations(db, actorId, filters = {}) {
-  const { side, status, limit, offset } = pageFilters(filters);
-  await currentActor(db, actorId);
-  const participant = side === 'requested' ? 'o.demandante_id' : 'o.oferente_id';
-  const rows = (await db.query(`${projection} WHERE ${participant}=$1
-    AND ($2::operation_status IS NULL OR o.status=$2::operation_status)
-    ORDER BY o.updated_at DESC,o.id DESC LIMIT $3 OFFSET $4`,
-  [actorId, status ?? null, limit, offset])).rows;
-  return { items: rows.map(row => projected(row, actorId)), limit, offset };
-}
-
-export async function getParticipantOperation(db, actorId, operationId) {
-  uuid(operationId); await currentActor(db, actorId);
-  const row = (await db.query(`${projection} WHERE o.id=$1 AND (o.demandante_id=$2 OR o.oferente_id=$2)`,
-    [operationId, actorId])).rows[0];
-  if (!row) throw missing();
-  return projected(row, actorId);
-}
-
-async function transitionRule(client, from, to, actorKind, precondition) {
-  const row = (await client.query(`SELECT from_status,to_status,actor_kind,precondition_key,effect_key
-    FROM operation_transition_rules WHERE from_status=$1 AND to_status=$2
-      AND actor_kind=$3 AND precondition_key=$4`, [from, to, actorKind, precondition])).rows[0];
-  if (!row) throw conflict();
-  return row;
-}
-
-async function decisionEffects(client, operation, previousStatus, status, actorId, reasonCode) {
-  const eventType = status === 'Aceptada' ? 'operation.accepted' :
-    status === 'Expirada' ? 'operation.expired' : 'operation.rejected';
-  const summary = { status, publication_id: operation.publication_id,
-    requester_id: operation.demandante_id, owner_id: operation.oferente_id,
-    ...(reasonCode ? { reason_code: reasonCode } : {}) };
-  await appendAudit(client, { actorId, action: eventType, entityType: 'operation', entityId: operation.id,
-    oldValues: { status: previousStatus }, newValues: summary });
-  await enqueueOutboxEvent(client, { aggregateType: 'operation', aggregateId: operation.id,
-    eventType, payload: { operationId: operation.id, ...summary },
-    deduplicationKey: `${eventType}:${operation.id}` });
-}
-
-async function expireLockedOperation(client, operation, now) {
-  const rule = await transitionRule(client, 'Pendiente', 'Expirada', 'system', 'expired_request');
-  authorizeTransition(rule, { operation, actorId: null, now });
-  await client.query(`UPDATE operations SET status='Expirada',decided_at=$2,decided_by=NULL,
-    decision_reason='request_expired',updated_at=$2 WHERE id=$1`, [operation.id, now]);
-  await decisionEffects(client, operation, 'Pendiente', 'Expirada', null, 'request_expired');
-}
-
-function cancellationEffectsStatus(status) {
-  if (status === 'Cancelada') return 'operation.cancelled';
-  if (status === 'Cancelación en reversión') return 'operation.cancellation_reversal_requested';
-  throw conflict();
-}
-
-async function cancellationEffects(client, operation, status, actorId) {
-  const eventType = cancellationEffectsStatus(status);
-  const summary = { status, publication_id: operation.publication_id,
-    requester_id: operation.demandante_id, owner_id: operation.oferente_id };
-  await appendAudit(client, { actorId, action: eventType, entityType: 'operation', entityId: operation.id,
-    oldValues: { status: operation.status }, newValues: summary });
-  await enqueueOutboxEvent(client, { aggregateType: 'operation', aggregateId: operation.id,
-    eventType, payload: { operationId: operation.id, ...summary },
-    deduplicationKey: `${eventType}:${operation.id}` });
-}
-
-export async function cancelOperation(db, actorId, operationId, input) {
-  uuid(actorId); uuid(operationId);
-  const { reason } = parseCancellation(input);
-  const discovered = (await db.query(`SELECT o.publication_id,o.demandante_id,o.oferente_id,p.owner_id
-    FROM operations o JOIN publications p ON p.id=o.publication_id WHERE o.id=$1`, [operationId])).rows[0];
-  if (!discovered) throw missing();
-  const outcome = await transaction(db, async client => {
-    for (const id of [...new Set([actorId, discovered.demandante_id, discovered.oferente_id,
-      discovered.owner_id])].sort()) {
-      const user = (await client.query('SELECT id,status,verification_status FROM users WHERE id=$1 FOR NO KEY UPDATE', [id])).rows[0];
-      // Cancellation is the requester's withdrawal. A suspended counterpart
-      // must not strand an accepted reservation; still lock their row so the
-      // established user→publication→operation order is preserved.
-      if (id === actorId || id === discovered.demandante_id) requireCurrentUser(user);
-    }
-    const publication = (await client.query('SELECT * FROM publications WHERE id=$1 FOR UPDATE',
-      [discovered.publication_id])).rows[0];
-    if (!publication) throw missing();
-    const operations = (await client.query('SELECT * FROM operations WHERE publication_id=$1 ORDER BY id FOR UPDATE',
-      [discovered.publication_id])).rows;
-    const operation = operations.find(row => row.id === operationId);
-    if (!operation || operation.publication_id !== discovered.publication_id ||
-      operation.demandante_id !== discovered.demandante_id ||
-      operation.oferente_id !== discovered.oferente_id || publication.owner_id !== discovered.owner_id) throw conflict();
-    if (actorId !== operation.demandante_id) throw forbidden();
-    const hasEconomicMovement = (await client.query('SELECT 1 FROM transactions WHERE operation_id=$1 LIMIT 1',
-      [operationId])).rowCount > 0;
-    const reservations = (await client.query('SELECT * FROM reservations WHERE publication_id=$1 ORDER BY id FOR UPDATE',
-      [publication.id])).rows;
-    if (['Cancelada', 'Cancelación en reversión'].includes(operation.status)) {
-      const row = (await client.query(`${projection} WHERE o.id=$1`, [operationId])).rows[0];
-      return { operation: projected(row, actorId) };
-    }
-    if (!['Pendiente', 'Aceptada', 'Pendiente de pago/garantía', 'Lista para entrega'].includes(operation.status)) throw conflict();
-    const now = (await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
-    if (operation.status === 'Pendiente' && now >= operation.request_expires_at) {
-      await expireLockedOperation(client, operation, now);
-      return { responseConflict: true };
-    }
-    const reversal = ['Pendiente de pago/garantía', 'Lista para entrega'].includes(operation.status);
-    const status = reversal ? 'Cancelación en reversión' : 'Cancelada';
-    const precondition = operation.status === 'Pendiente' ? 'pending_request' :
-      reversal ? 'pre_delivery' : 'pre_economic';
-    const rule = await transitionRule(client, operation.status, status, 'requester', precondition);
-    const reservation = reservations.find(row => row.operation_id === operationId);
-    if ((operation.status === 'Pendiente' && reservation) ||
-      (operation.status !== 'Pendiente' && (!reservation || reservation.status === 'Disponible'))) throw conflict();
-    const effect = authorizeTransition(rule, { operation, actorId, now,
-      hasEconomicMovement, delivered: false });
-    if (effect.releaseReservation) await client.query(`UPDATE reservations
-      SET status='Disponible',released_at=$2,release_reason='requester_cancelled'
-      WHERE operation_id=$1`, [operationId, now]);
-    await client.query(`UPDATE operations SET status=$2,cancelled_at=$3,cancelled_by=$4,
-      cancellation_reason=$5,updated_at=$3 WHERE id=$1`, [operationId, status, now, actorId, reason]);
-    await cancellationEffects(client, operation, status, actorId);
-    const row = (await client.query(`${projection} WHERE o.id=$1`, [operationId])).rows[0];
-    return { operation: projected(row, actorId) };
-  });
-  if (outcome.responseConflict) throw conflict();
-  return outcome.operation;
-}
-
-export async function expirePendingOperations(db, { now = new Date(), limit = 100, workerId } = {}) {
-  if (!(now instanceof Date) || !Number.isFinite(now.getTime()) ||
-      !Number.isInteger(limit) || limit < 1 || limit > 1000 ||
-      typeof workerId !== 'string' || !workerId.trim() || workerId.length > 200) throw invalid();
-  return transaction(db, async client => {
-    const rows = (await client.query(`SELECT * FROM operations
-      WHERE status='Pendiente' AND request_expires_at<=$1 ORDER BY id LIMIT $2
-      FOR UPDATE SKIP LOCKED`, [now, limit])).rows;
-    for (const operation of rows) await expireLockedOperation(client, operation, now);
-    return rows.map(row => row.id);
-  });
-}
-
-export async function invalidateAffectedPendingOperations(client, publicationId, cause) {
-  if (!['publication_unavailable', 'contract_changed'].includes(cause)) throw invalid();
-  const publication = (await client.query('SELECT * FROM publications WHERE id=$1', [publicationId])).rows[0];
-  if (!publication) throw publicationMissing();
-  const operations = (await client.query(`SELECT * FROM operations WHERE publication_id=$1
-    ORDER BY id FOR UPDATE`, [publicationId])).rows;
-  const now = (await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
-  for (const operation of operations) {
-    if (operation.status !== 'Pendiente') continue;
-    if (now >= operation.request_expires_at) {
-      await expireLockedOperation(client, operation, now);
-      continue;
-    }
-    const rule = await transitionRule(client, 'Pendiente', 'Rechazada', 'owner', 'publication_invalidated');
-    const effect = authorizeTransition(rule, { operation, publication,
-      actorId: publication.owner_id, now });
-    if (effect.createReservation || effect.releaseReservation || effect.retainReservation) throw conflict();
-    await client.query(`UPDATE operations SET status='Rechazada',decided_at=$2,
-      decided_by=$3,decision_reason=$4,updated_at=$2 WHERE id=$1`,
-    [operation.id, now, publication.owner_id, cause]);
-    await decisionEffects(client, operation, 'Pendiente', 'Rechazada', publication.owner_id, cause);
+    await client.query('ROLLBACK');
+    // Si el error no tiene código HTTP, asignarle 500 por defecto
+    if (!error.statusCode) error.statusCode = 500;
+    throw error;
+  } finally {
+    client.release();
   }
-}
+};
 
-function hasReservationConflict(reservations, operation) {
-  const live = reservations.filter(row => ['Bloqueo Provisional', 'Reservada/Bloqueada', 'Activa/En uso'].includes(row.status));
-  if (operation.modality === 'Venta') return live.some(row => row.start_date === null);
-  const start = new Date(operation.start_date).getTime();
-  const end = new Date(operation.end_date).getTime();
-  return live.some(row => row.start_date !== null && start < new Date(row.end_date).getTime() &&
-    new Date(row.start_date).getTime() < end);
-}
+// 2. Confirmar Entrega Física (El Oferente ingresa el OTP)
+export const confirmDelivery = async (operationId, otpCode, userId) => {
+  const opQuery = `SELECT oferente_id, otp_code, status FROM operations WHERE id = $1`;
+  const { rows } = await pool.query(opQuery, [operationId]);
 
-function changedContract(publication, operation) {
-  return Number(publication.contract_version) !== Number(operation.requested_contract_version) ||
-    publication.modality !== operation.modality ||
-    Number(publication.price) !== Number(operation.requested_price) ||
-    Number(publication.guarantee_amount) !== Number(operation.requested_guarantee_amount);
-}
+  if (rows.length === 0) {
+    const error = new Error('Operación no encontrada.');
+    error.statusCode = 404;
+    throw error;
+  }
+  
+  const operation = rows[0];
 
-export async function decideOperation(db, ownerId, operationId, input) {
-  uuid(ownerId); uuid(operationId);
-  const { decision, reason } = parseDecision(input);
-  // Discovery selects lock targets only. All relationships are verified after locking.
-  const discovered = (await db.query(`SELECT o.publication_id,o.demandante_id,o.oferente_id,p.owner_id
-    FROM operations o JOIN publications p ON p.id=o.publication_id WHERE o.id=$1`, [operationId])).rows[0];
-  if (!discovered) throw missing();
-  const outcome = await transaction(db, async client => {
-    for (const id of [...new Set([ownerId, discovered.demandante_id, discovered.oferente_id,
-      discovered.owner_id])].sort()) {
-      const user = (await client.query('SELECT id,status,verification_status FROM users WHERE id=$1 FOR NO KEY UPDATE', [id])).rows[0];
-      // The current owner and requester must remain eligible throughout acceptance.
-      if (id === ownerId || id === discovered.demandante_id || id === discovered.owner_id) requireCurrentUser(user);
-    }
-    const publication = (await client.query('SELECT * FROM publications WHERE id=$1 FOR UPDATE',
-      [discovered.publication_id])).rows[0];
-    if (!publication) throw missing();
-    const operations = (await client.query('SELECT * FROM operations WHERE publication_id=$1 ORDER BY id FOR UPDATE',
-      [discovered.publication_id])).rows;
-    const operation = operations.find(row => row.id === operationId);
-    if (!operation || operation.publication_id !== discovered.publication_id ||
-      operation.demandante_id !== discovered.demandante_id ||
-      operation.oferente_id !== discovered.oferente_id || publication.owner_id !== discovered.owner_id) throw conflict();
-    if (ownerId !== publication.owner_id || ownerId !== operation.oferente_id) throw forbidden();
-    const reservations = (await client.query('SELECT * FROM reservations WHERE publication_id=$1 ORDER BY id FOR UPDATE',
-      [publication.id])).rows;
-    if (operation.status === (decision === 'accept' ? 'Aceptada' : 'Rechazada')) {
-      const row = (await client.query(`${projection} WHERE o.id=$1`, [operationId])).rows[0];
-      return { operation: projected(row, ownerId) };
-    }
-    if (operation.status !== 'Pendiente') throw conflict();
-    const now = (await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
-    if (now >= operation.request_expires_at) {
-      await expireLockedOperation(client, operation, now);
-      return { responseConflict: true };
-    }
-    let status, decidedBy, decisionReason, acceptedAt = null, responseConflict = false;
-    let precondition;
-    if (decision === 'accept' && (publication.status !== 'Activa' || changedContract(publication, operation))) {
-      status = 'Rechazada'; decidedBy = ownerId;
-      decisionReason = publication.status !== 'Activa' ? 'publication_unavailable' : 'contract_changed';
-      precondition = 'publication_invalidated'; responseConflict = true;
-    } else if (decision === 'reject') {
-      status = 'Rechazada'; decidedBy = ownerId; decisionReason = reason;
-      precondition = 'pending_request';
-    } else {
-      status = 'Aceptada'; decidedBy = ownerId; decisionReason = null; acceptedAt = now;
-      precondition = 'request_available';
-    }
-    const rule = await transitionRule(client, 'Pendiente', status, 'owner', precondition);
-    const reservationConflict = hasReservationConflict(reservations, operation);
-    if (status === 'Aceptada' && operation.modality !== 'Venta' &&
-      new Date(operation.start_date).getTime() < now.getTime()) throw conflict();
-    authorizeTransition(rule, { operation, publication, actorId: ownerId, now, reservationConflict });
-    const snapshot = status === 'Aceptada' ? buildContractSnapshot({ ...publication,
-      contract_version: Number(publication.contract_version) }, operation, now) : null;
-    await client.query(`UPDATE operations SET status=$2,decided_at=$3,decided_by=$4,decision_reason=$5,
-      accepted_at=$6,contract_snapshot=$7,updated_at=$3 WHERE id=$1`,
-    [operationId, status, now, decidedBy, decisionReason, acceptedAt, snapshot]);
-    if (status === 'Aceptada') await client.query(`INSERT INTO reservations
-      (publication_id,operation_id,start_date,end_date,status) VALUES ($1,$2,$3,$4,'Reservada/Bloqueada')`,
-    [publication.id, operationId, operation.start_date, operation.end_date]);
-    await decisionEffects(client, operation, 'Pendiente', status, decidedBy,
-      precondition === 'publication_invalidated' ? decisionReason : null);
-    const row = (await client.query(`${projection} WHERE o.id=$1`, [operationId])).rows[0];
-    return { operation: projected(row, ownerId), responseConflict };
-  });
-  if (outcome.responseConflict) throw conflict();
-  return outcome.operation;
-}
+  if (operation.oferente_id !== userId) {
+    const error = new Error('Solo el oferente puede confirmar la entrega del equipo.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (operation.status !== 'Lista para entrega' && operation.status !== 'Pendiente de pago/garantía') {
+    const error = new Error('La operación no se encuentra en estado de entrega.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (operation.otp_code !== otpCode) {
+    const error = new Error('Código OTP incorrecto. Verifica con el demandante.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const updateQuery = `
+    UPDATE operations 
+    SET status = 'Entregada/Activa', updated_at = CURRENT_TIMESTAMP 
+    WHERE id = $1 RETURNING id, status
+  `;
+  const updatedOp = await pool.query(updateQuery, [operationId]);
+
+  return {
+    message: 'Entrega confirmada exitosamente. La operación está activa.',
+    operation: updatedOp.rows[0]
+  };
+};
+
+export const listParticipantOperations = async (userId) => {
+  const query = `SELECT * FROM operations WHERE demandante_id = $1 OR oferente_id = $1 ORDER BY created_at DESC`;
+  const { rows } = await pool.query(query, [userId]);
+  return rows;
+};
+
+export const getParticipantOperation = async (operationId, userId) => {
+  const query = `SELECT * FROM operations WHERE id = $1 AND (demandante_id = $2 OR oferente_id = $2)`;
+  const { rows } = await pool.query(query, [operationId, userId]);
+  if (rows.length === 0) throw Object.assign(new Error('Operación no encontrada'), { statusCode: 404 });
+  return rows[0];
+};
+
+export const acceptOperation = async (operationId, userId) => {
+  // Lógica: Solo el oferente puede aceptar. Cambia estado a 'Pendiente de pago/garantía' o similar.
+  await pool.query(`UPDATE operations SET status = 'Aceptada' WHERE id = $1 AND oferente_id = $2`, [operationId, userId]);
+  return { message: 'Operación aceptada exitosamente.' };
+};
+
+export const rejectOperation = async (operationId, userId) => {
+  await pool.query(`UPDATE operations SET status = 'Rechazada' WHERE id = $1 AND oferente_id = $2`, [operationId, userId]);
+  return { message: 'Operación rechazada.' };
+};
+
+export const cancelOperation = async (operationId, userId) => {
+  await pool.query(`UPDATE operations SET status = 'Cancelada' WHERE id = $1 AND demandante_id = $2`, [operationId, userId]);
+  return { message: 'Operación cancelada.' };
+};

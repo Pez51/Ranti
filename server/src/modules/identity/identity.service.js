@@ -53,8 +53,9 @@ export const loginUser = async (credentials) => {
     throw new AppError({ status: 401, message: 'Credenciales inválidas.' });
   }
 
+  // 1. Agregamos el 'status' dentro de la firma del Token (Para el Backend)
   const token = jwt.sign(
-    { id: user.id, role: user.role },
+    { id: user.id, role: user.role, status: user.status },
     process.env.JWT_SECRET,
     { expiresIn: '24h' }
   );
@@ -65,6 +66,7 @@ export const loginUser = async (credentials) => {
       id: user.id, 
       email: user.email, 
       role: user.role, 
+      status: user.status, // 2. <--- LA PIEZA CLAVE (Para el Frontend)
       reputation: user.reputation_score 
     }
   };

@@ -1,54 +1,51 @@
 import jwt from 'jsonwebtoken';
+import { AppError } from '../shared/errors/app-error.js';
 import pool from '../config/database.js';
-import { env } from '../config/env.js';
 
 export const requireAuth = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Acceso denegado. Token no proporcionado o formato inválido.' });
-  }
-
-  let decoded;
   try {
-    decoded = jwt.verify(authHeader.slice(7), env.JWT_SECRET, { algorithms: ['HS256'] });
-    if (typeof decoded !== 'object' || typeof decoded.id !== 'string' ||
-        !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(decoded.id)) {
-      return res.status(401).json({ error: 'Sesión inválida. Inicia sesión nuevamente.' });
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new AppError({ status: 401, message: 'No autenticado. Token faltante.' });
     }
-  } catch {
-    return res.status(401).json({ error: 'Token inválido o expirado. Inicia sesión nuevamente.' });
-  }
 
-  try {
-    // Un JWT vigente no conserva permisos revocados después de su emisión.
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Verificación en tiempo real: Traemos el rol y estado directo de la base de datos
     const { rows } = await pool.query(
-      'SELECT id, role, status, verification_status FROM users WHERE id = $1',
-      [decoded.id],
+      'SELECT id, email, role, status FROM users WHERE id = $1', 
+      [decoded.id]
     );
-    if (!rows.length) return res.status(401).json({ error: 'La cuenta de esta sesión no existe.' });
-    if (rows[0].status === 'Suspendida') {
-      return res.status(403).json({ error: 'Tu cuenta está suspendida.' });
+    
+    if (rows.length === 0) {
+      throw new AppError({ status: 401, message: 'Usuario no encontrado en el sistema.' });
     }
+
+    // Inyectamos la información fresca y real en la petición
     req.user = rows[0];
-  } catch {
-    return res.status(503).json({ error: 'No se pudo comprobar la sesión. Inténtalo nuevamente.' });
+    next();
+  } catch (error) {
+    next(new AppError({ status: 401, message: 'Token inválido o expirado.', code: 'AUTH_INVALID_TOKEN' }));
   }
-  next();
 };
 
 export const requireVerifiedAccount = (req, res, next) => {
-  if (req.user?.status !== 'Activa' || req.user?.verification_status !== 'Verificado') {
-    return res.status(403).json({ error: 'Necesitas una cuenta activa y verificada para realizar esta acción.' });
+  // Soportamos ambas variaciones ('Activo' o 'Activa') para evitar bloqueos por género de la palabra
+  if (req.user.status !== 'Activo' && req.user.status !== 'Activa') {
+    return next(new AppError({ 
+      status: 403, 
+      message: 'Necesitas una cuenta activa y verificada para realizar esta acción.' 
+    }));
   }
   next();
 };
 
-export const requireRole = (...allowedRoles) => (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({ error: 'Necesitas iniciar sesión para realizar esta acción.' });
-  }
-  if (!allowedRoles.includes(req.user.role)) {
-    return res.status(403).json({ error: 'No tienes permiso para realizar esta acción.' });
-  }
-  next();
+export const requireRole = (role) => {
+  return (req, res, next) => {
+    if (req.user.role !== role) {
+      return next(new AppError({ status: 403, message: `No tienes permisos suficientes. Requiere: ${role}` }));
+    }
+    next();
+  };
 };

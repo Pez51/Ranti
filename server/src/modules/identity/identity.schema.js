@@ -9,7 +9,7 @@ export const registerSchema = z.object({
   password: z.string()
     .min(8, 'La contraseña debe tener al menos 8 caracteres.')
     .max(50, 'La contraseña es demasiado larga.'),
-  role: z.enum(['Estudiante', 'Docente', 'Egresado', 'Administrador']).optional(),
+  role: z.enum(['Estudiante', 'Docente', 'Egresado', 'Administrador', 'Moderador', 'Soporte']).optional(),
   academic_condition: z.string().optional()
 });
 

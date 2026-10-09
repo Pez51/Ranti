@@ -1,24 +1,51 @@
-import { AppError } from '../shared/errors/app-error.js';
+// 1. El atrapador de rutas inexistentes (404)
+export const notFound = (req, res, next) => {
+  const error = new Error(`No se encontró la ruta: ${req.originalUrl}`);
+  error.status = 404;
+  error.code = 'ROUTE_NOT_FOUND';
+  next(error); // Pasa el error al errorHandler
+};
 
-export function notFound(req, res, next) {
-  next(new AppError({ status: 404, code: 'NOT_FOUND', message: 'Ruta no encontrada.' }));
-}
+// 2. El interceptor global de errores
+export const errorHandler = (err, req, res, next) => {
+  let statusCode = err.status || 500;
+  let message = err.message || 'Error interno del servidor';
+  let code = err.code || 'INTERNAL_SERVER_ERROR';
+  let details = err.details || null;
 
-export function errorHandler(error, req, res, next) {
-  if (res.headersSent) return next(error);
+  // Interceptar Errores Nativos de PostgreSQL
+  if (err.code === '23505') { 
+    statusCode = 409;
+    message = 'El registro ya existe en el sistema.';
+    code = 'DB_DUPLICATE_KEY';
+  } else if (err.code === '22P02') {
+    statusCode = 400;
+    message = 'Formato de dato inválido para la base de datos.';
+    code = 'DB_INVALID_TEXT_REPRESENTATION';
+  }
 
-  const publicError = error instanceof AppError
-    ? error
-    : error?.type === 'entity.parse.failed'
-      ? new AppError({ status: 400, code: 'INVALID_JSON', message: 'JSON inválido.' })
-      : new AppError({ status: 500, code: 'INTERNAL_ERROR', message: 'Error interno del servidor.' });
+  // Interceptar Errores de Autenticación (JWT)
+  if (err.name === 'JsonWebTokenError') {
+    statusCode = 401;
+    message = 'Firma de token inválida o alterada. Inicia sesión nuevamente.';
+    code = 'AUTH_INVALID_TOKEN';
+  } else if (err.name === 'TokenExpiredError') {
+    statusCode = 401;
+    message = 'Tu sesión ha expirado por seguridad. Inicia sesión nuevamente.';
+    code = 'AUTH_EXPIRED_TOKEN';
+  }
 
-  res.status(publicError.status).json({
-    error: {
-      code: publicError.code,
-      message: publicError.message,
-      ...(publicError.details === undefined ? {} : { details: publicError.details }),
-      request_id: req.requestId,
-    },
+  // Modo Seguridad en Producción
+  if (statusCode === 500 && process.env.NODE_ENV === 'production') {
+    message = 'Algo salió mal en el servidor. Nuestro equipo ha sido notificado.';
+  }
+
+  // Enviar respuesta estructurada
+  res.status(statusCode).json({
+    success: false,
+    code,
+    message,
+    ...(details && { details }),
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }) 
   });
-}
+};

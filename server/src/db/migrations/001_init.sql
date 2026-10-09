@@ -154,3 +154,18 @@ CREATE TABLE audit_logs (
     new_values JSONB,
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- =================================================================
+-- TABLA: outbox (Para manejo de eventos y trabajos en segundo plano)
+-- =================================================================
+CREATE TABLE IF NOT EXISTS outbox (
+    id SERIAL PRIMARY KEY,
+    event_type VARCHAR(100) NOT NULL,
+    payload JSONB NOT NULL,
+    status VARCHAR(50) DEFAULT 'Pendiente' CHECK (status IN ('Pendiente', 'Procesado', 'Fallido')),
+    error_log TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    processed_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status);

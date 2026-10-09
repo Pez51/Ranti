@@ -73,7 +73,7 @@ export default function Home() {
             <Link to={`/producto/${product.id}`} key={product.id} className="bg-white rounded-3xl border-4 border-ranti-ink p-4 shadow-solid hover:-translate-y-2 hover:shadow-solid-hover transition-all duration-300 flex flex-col h-full group">
               <div className="aspect-square bg-gray-100 rounded-2xl border-4 border-ranti-ink mb-4 overflow-hidden relative flex items-center justify-center">
                 <span className="absolute z-10 top-3 left-3 bg-yellow-300 text-ranti-ink text-xs font-display font-bold px-3 py-1.5 rounded-full border-4 border-ranti-ink shadow-solid-sm">{product.modality}</span>
-                {product.primary_image ? <img src={product.primary_image} alt="" className="w-full h-full object-cover" /> : <PackageSearch size={64} className="text-gray-300" />}
+                {product.primary_image ? (<img src={product.primary_image} alt={product.title} className="w-full h-full object-cover" onError={(e) => { e.target.src = 'https://placehold.co/400x400/eeeeee/999999?text=Sin+Imagen'; }}/>) : (<PackageSearch size={64} className="text-gray-300" />)}
               </div>
               <div className="flex-grow flex flex-col justify-between">
                 <div>

@@ -86,7 +86,7 @@ export default function ProductDetail() {
         <div className="lg:col-span-2 space-y-8">
           <div className="bg-gray-100 aspect-video rounded-3xl border-4 border-ranti-ink shadow-solid flex items-center justify-center relative overflow-hidden">
             <span className="absolute z-10 top-4 left-4 bg-yellow-300 text-ranti-ink text-sm font-display font-bold px-4 py-2 rounded-full border-4 border-ranti-ink shadow-solid-sm">{product.modality}</span>
-            {primaryImage ? <img src={primaryImage} alt={product.title} className="w-full h-full object-cover" /> : <PackageSearch size={80} className="text-gray-300" />}
+            {primaryImage ? (<img src={primaryImage} alt={product.title} className="w-full h-full object-cover" onError={(e) => { e.target.src = 'https://placehold.co/800x600/eeeeee/999999?text=Imagen+No+Disponible'; }}/>) : (  <PackageSearch size={80} className="text-gray-300" />)}
           </div>
           <div className="bg-white p-8 rounded-3xl border-4 border-ranti-ink shadow-solid">
             <div className="flex items-center gap-2 mb-2">

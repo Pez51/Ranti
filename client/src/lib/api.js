@@ -1,11 +1,20 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 export async function apiRequest(path, { token, headers, ...options } = {}) {
+  // AUTO-INYECCIÓN DEL TOKEN: Si no se pasa manual, lo busca en la memoria
+  let finalToken = token;
+  if (!finalToken) {
+    try {
+      const sessionData = JSON.parse(localStorage.getItem('ranti-session'));
+      finalToken = sessionData?.token;
+    } catch (e) { /* Ignorar si no hay sesión */ }
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(finalToken ? { Authorization: `Bearer ${finalToken}` } : {}),
       ...headers,
     },
   });

@@ -148,3 +148,19 @@ export const cancelOperation = async (operationId, userId) => {
   await pool.query(query, [operationId, userId]);
   return { message: 'Operación cancelada.' };
 };
+
+// 8. Trabajo en Segundo Plano: Expirar operaciones abandonadas
+export const expirePendingOperations = async () => {
+  try {
+    const expiredOps = await operationRepo.cancelExpiredOperations();
+    
+    if (expiredOps.length > 0) {
+      console.log(`[Job] 🧹 Se cancelaron automáticamente ${expiredOps.length} operaciones expiradas por falta de pago.`);
+    }
+    
+    return expiredOps;
+  } catch (error) {
+    console.error('❌ Error al expirar operaciones:', error);
+    throw error;
+  }
+};

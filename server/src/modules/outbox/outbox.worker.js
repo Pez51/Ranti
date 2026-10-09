@@ -1,25 +1,53 @@
-import { claimOutboxBatch, completeOutboxEvent, failOutboxEvent } from './outbox.repository.js';
+import pool from '../../config/database.js';
 
-// db must be an autocommit Pool or idle Client. Handlers receive payload plus the
-// stored event (including its stable id/deduplication_key for idempotent delivery).
-export async function processOutboxBatch({ db, handlers, workerId, now = () => new Date() }) {
-  const events = await claimOutboxBatch(db, { workerId });
-  let processed = 0;
-  let failed = 0;
-  for (const event of events) {
-    try {
-      const handler = Object.hasOwn(handlers, event.event_type) ? handlers[event.event_type] : undefined;
-      if (typeof handler !== 'function') throw new Error('No registered outbox handler.');
-      await handler(event.payload, event);
-    } catch (error) {
-      const nextAttempt = event.attempts + 1;
-      const seconds = Math.min(2 ** Math.min(nextAttempt, 7) * 30, 3600);
-      const retryAt = new Date(now().getTime() + seconds * 1000);
-      if (await failOutboxEvent(db, { id: event.id, workerId, error, retryAt })) failed++;
-      continue;
+// Exportamos la función con el nombre exacto que busca scheduler.js
+export const processOutbox = async () => {
+  try {
+    // 1. Buscar eventos pendientes (ej. correos por enviar, notificaciones)
+    // Se limita a 50 para no saturar la memoria en cada ciclo
+    const query = `
+      SELECT id, event_type, payload 
+      FROM outbox 
+      WHERE status = 'Pendiente' 
+      ORDER BY created_at ASC 
+      LIMIT 50
+    `;
+    const { rows: events } = await pool.query(query);
+
+    if (events.length === 0) {
+      // Si no hay nada en la cola, salimos silenciosamente
+      return;
     }
-    // A persistence error must propagate, not be misclassified as a handler error.
-    if (await completeOutboxEvent(db, { id: event.id, workerId })) processed++;
+
+    console.log(`[Outbox] Procesando ${events.length} eventos pendientes...`);
+
+    // 2. Procesar cada evento uno por uno
+    for (const event of events) {
+      try {
+        // --- AQUÍ VA TU LÓGICA DE EVENTOS ---
+        // Ejemplo: Si el evento es enviar un correo de verificación
+        if (event.event_type === 'EmailVerification') {
+          // const { email, code } = event.payload;
+          // await enviarCorreo(email, code);
+        }
+
+        // 3. Si todo sale bien, marcamos el evento como Procesado
+        await pool.query(
+          `UPDATE outbox SET status = 'Procesado', processed_at = CURRENT_TIMESTAMP WHERE id = $1`, 
+          [event.id]
+        );
+
+      } catch (err) {
+        // 4. Si un evento individual falla, lo marcamos como Fallido pero continuamos con el resto
+        console.error(`[Outbox] Error procesando evento ${event.id}:`, err.message);
+        await pool.query(
+          `UPDATE outbox SET status = 'Fallido', error_log = $2 WHERE id = $1`, 
+          [event.id, err.message]
+        );
+      }
+    }
+  } catch (error) {
+    // Captura errores globales (ej. se cayó la base de datos)
+    console.error('❌ [Outbox Error] Fallo crítico al revisar la cola de eventos:', error.message);
   }
-  return { processed, failed };
-}
+};

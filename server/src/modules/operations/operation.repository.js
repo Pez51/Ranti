@@ -35,3 +35,16 @@ export const insertReservation = async (client, resData) => {
   `;
   await client.query(query, resData);
 };
+// Buscar operaciones pendientes por más de 24 horas y cancelarlas
+export const cancelExpiredOperations = async () => {
+  const query = `
+    UPDATE operations 
+    SET status = 'Cancelada', updated_at = CURRENT_TIMESTAMP 
+    WHERE status = 'Pendiente de pago/garantía' 
+    AND created_at < NOW() - INTERVAL '24 hours'
+    RETURNING id;
+  `;
+  // Para esta operación autónoma usamos pool directamente
+  const { rows } = await pool.query(query);
+  return rows;
+};

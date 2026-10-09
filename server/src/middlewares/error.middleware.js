@@ -48,4 +48,4 @@ export const errorHandler = (err, req, res, next) => {
     ...(details && { details }),
     ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }) 
   });
-};
+}; 

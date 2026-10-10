@@ -71,9 +71,9 @@ export default function Header() {
                       <span className="hidden md:inline">INGRESAR</span>
                     </Link>
                   ) : (
-                    <div className="w-11 h-11 bg-pink-200 rounded-full border-4 border-ranti-ink shadow-solid overflow-hidden flex items-center justify-center cursor-pointer" onClick={() => setIsMenuOpen(true)}>
+                    <Link to="/perfil" className="w-11 h-11 bg-pink-200 rounded-full border-4 border-ranti-ink shadow-solid overflow-hidden flex items-center justify-center cursor-pointer hover:scale-105 transition-transform">
                       <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(session.user.email)}`} alt="Perfil" className="w-full h-full object-cover" />
-                    </div>
+                    </Link>
                   )}
                 </div>
               </div>

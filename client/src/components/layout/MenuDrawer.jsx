@@ -38,6 +38,12 @@ export default function MenuDrawer({ isOpen, onClose, isLoggedIn, user, onLogout
               <LogIn size={24} /> Iniciar Sesión
             </Link>
           )}
+          <Link 
+              to="/perfil" 
+              onClick={onClose} 
+              className="block py-3 px-4 border-b-4 border-ranti-ink font-display font-bold text-lg hover:bg-gray-100 transition-colors">
+              Perfil
+         </Link>
 
           <div className="pt-4 pb-2">
             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Navegación Rápida</p>

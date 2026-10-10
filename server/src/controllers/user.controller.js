@@ -1,5 +1,6 @@
 import * as profileService from '../modules/users/profile.service.js';
 import * as roleReviewService from '../modules/users/role-review.service.js';
+import pool from '../config/database.js';
 
 export const getMe = async (req, res, next) => {
   try { res.status(200).json(await profileService.getProfile(req.user.id)); } catch (e) { next(e); }

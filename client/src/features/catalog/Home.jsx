@@ -2,6 +2,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Filter, AlertCircle, PackageSearch } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
+import { getSession } from '../../lib/auth';
 
 const formatPrice = (product) => product.modality === 'Préstamo'
   ? 'Gratis'
@@ -16,6 +17,17 @@ export default function Home() {
   const [error, setError] = useState('');
   const gridRef = useRef(null);
 
+  // Lógica para ocultar el banner a usuarios logueados o recurrentes
+  const [showBanner] = useState(() => {
+    if (getSession()) return false; // Ocultar si ya inició sesión
+    if (sessionStorage.getItem('ranti_banner_seen')) return false; // Ocultar si ya estaba navegando
+    
+    sessionStorage.setItem('ranti_banner_seen', 'true'); // Marcar como visto para la próxima vez
+    return true;
+  });
+
+
+  
   useEffect(() => {
     const controller = new AbortController();
     const loadProducts = async () => {
@@ -39,14 +51,16 @@ export default function Home() {
 
   return (
     <div className="space-y-10 py-4">
-      <section className="bg-ranti-light rounded-3xl border-4 border-ranti-ink p-8 md:p-12 shadow-solid flex flex-col items-center text-center">
-        <div className="max-w-2xl">
-          <div className="inline-block bg-ranti-dark text-white px-4 py-1.5 rounded-full border-4 border-ranti-ink mb-6 font-display font-bold text-sm shadow-solid-sm">Comunidad Santamariana</div>
-          <h2 className="text-4xl md:text-5xl lg:text-6xl font-display font-bold leading-tight mb-4 text-ranti-ink" style={{ textShadow: '2px 2px 0px #ffffff' }}>Tus herramientas académicas, a un clic de distancia</h2>
-          <p className="text-lg md:text-xl font-body font-bold text-gray-700 mb-8">Alquila, compra o pide prestado equipamiento especializado dentro de la comunidad universitaria.</p>
-          <button onClick={() => gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="bg-green-gradient text-ranti-ink px-8 py-3 rounded-full border-4 border-ranti-ink shadow-solid hover:shadow-solid-hover hover:-translate-y-1 transition-all font-display font-bold text-lg">Explorar Catálogo</button>
-        </div>
-      </section>
+      {showBanner && (
+        <section className="bg-ranti-light rounded-3xl border-4 border-ranti-ink p-8 md:p-12 shadow-solid flex flex-col items-center text-center">
+          <div className="max-w-2xl">
+            <div className="inline-block bg-ranti-dark text-white px-4 py-1.5 rounded-full border-4 border-ranti-ink mb-6 font-display font-bold text-sm shadow-solid-sm">Comunidad Santamariana</div>
+            <h2 className="text-4xl md:text-5xl lg:text-6xl font-display font-bold leading-tight mb-4 text-ranti-ink" style={{ textShadow: '2px 2px 0px #ffffff' }}>Tus herramientas académicas, a un clic de distancia</h2>
+            <p className="text-lg md:text-xl font-body font-bold text-gray-700 mb-8">Alquila, compra o pide prestado equipamiento especializado dentro de la comunidad universitaria.</p>
+            <button onClick={() => gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="bg-green-gradient text-ranti-ink px-8 py-3 rounded-full border-4 border-ranti-ink shadow-solid hover:shadow-solid-hover hover:-translate-y-1 transition-all font-display font-bold text-lg">Explorar Catálogo</button>
+          </div>
+        </section>
+      )}
 
       <section ref={gridRef} className="flex flex-col md:flex-row justify-between items-center gap-4 scroll-mt-32">
         <h3 className="text-2xl font-display font-bold">{searchQuery ? `Resultados para "${searchQuery}"` : 'Equipos disponibles'}</h3>

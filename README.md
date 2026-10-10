@@ -198,3 +198,10 @@ Cada suite PostgreSQL productora posee una base privada dentro del clúster temp
 No hay proveedor institucional real, carga binaria de evidencia ni almacén privado de objetos. Por confirmar: alta operativa de administradores, gobierno de términos/proveedores, retención de evidencia y despliegue del worker.
 
 Fases posteriores pendientes: economía simulada, reversión, OTP/entrega y cierre completos, reputación, incidencias, moderación general, ARCO y notificaciones completas. `PAYMENT_PROVIDER=simulated` es configuración futura: Fase 3 no cobra ni genera OTP. La ruta heredada `POST /api/operations/:id/confirm` todavía exige `Lista para entrega` y compara OTP legado, pero ningún flujo de Fase 3 alcanza ese estado ni emite código; no acredita entrega segura. Pago/entrega del cliente muestran indisponibilidad; no dinero real. Por confirmar: programación operativa del comando de expiración, despliegue del worker outbox y pruebas de piloto. No se afirma cumplimiento RNF, SUS, disponibilidad, recuperación ni instalación PWA.
+
+## 🛠️ Configuración de la Base de Datos y Datos de Prueba
+
+1. Levanta la base de datos PostgreSQL.
+2. Ejecuta las migraciones oficiales para crear las tablas y roles (`node server/src/db/migrate.js`).
+3. **(Opcional para Desarrollo):** Para no empezar con la plataforma vacía, puedes poblar el catálogo ejecutando el script `server/src/db/seed.sql` directamente en tu gestor de base de datos (pgAdmin, DBeaver, etc.).
+4. El script `seed.sql` creará perfiles de prueba (docentes, estudiantes, egresados) e inyectará 10 publicaciones de prueba con imágenes. La contraseña para todos los usuarios de prueba es: `123456`.

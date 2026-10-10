@@ -47,7 +47,7 @@ export default function Home() {
     };
     loadProducts();
     return () => controller.abort();
-  }, [activeFilter, searchQuery]);
+  }, [activeFilter, searchQuery, categoryQuery]);
 
   return (
     <div className="space-y-10 py-4">

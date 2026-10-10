@@ -2,7 +2,7 @@ import pool from '../../config/database.js';
 
 // 1. Obtener catálogo con filtros dinámicos
 export const getPublications = async (queryParams) => {
-  const { search, modality, category } = queryParams;
+  const { search, modality, category, condition } = queryParams;
   
   let query = `
     SELECT p.id, p.title, p.category, p.modality, p.price, p.guarantee_amount, 
@@ -32,6 +32,12 @@ export const getPublications = async (queryParams) => {
   if (category) {
     query += ` AND p.category = $${paramIndex}`;
     params.push(category);
+    paramIndex++;
+  }
+
+  if (condition) {
+    query += ` AND p.condition = $${paramIndex}`;
+    params.push(condition);
     paramIndex++;
   }
 
@@ -91,12 +97,12 @@ export const createPublication = async (publicationData, userId) => {
     // B. Insertar las imágenes (Si el arreglo contiene URLs)
     if (images && Array.isArray(images) && images.length > 0) {
       const insertImgQuery = `
-        INSERT INTO publication_images (publication_id, image_url, is_primary)
-        VALUES ($1, $2, $3)
+        INSERT INTO publication_images (publication_id, image_url, is_primary, position)
+        VALUES ($1, $2, $3, $4)
       `;
       for (let i = 0; i < images.length; i++) {
-        // La primera imagen del arreglo siempre será la principal (portada)
-        await client.query(insertImgQuery, [publicationId, images[i], i === 0]);
+        // La primera imagen (i=0) es la principal. La posición empieza en 1 (i+1).
+        await client.query(insertImgQuery, [publicationId, images[i], i === 0, i + 1]);
       }
     }
 

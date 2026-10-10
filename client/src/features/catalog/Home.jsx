@@ -11,6 +11,7 @@ const formatPrice = (product) => product.modality === 'Préstamo'
 export default function Home() {
   const [searchParams] = useSearchParams();
   const searchQuery = searchParams.get('q') || '';
+  const categoryQuery = searchParams.get('category') || ''; // <-- NUEVO
   const [activeFilter, setActiveFilter] = useState('Todos');
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,8 +27,6 @@ export default function Home() {
     return true;
   });
 
-
-  
   useEffect(() => {
     const controller = new AbortController();
     const loadProducts = async () => {
@@ -35,6 +34,7 @@ export default function Home() {
       setError('');
       const query = new URLSearchParams();
       if (searchQuery) query.set('search', searchQuery);
+      if (categoryQuery) query.set('category', categoryQuery);
       if (activeFilter !== 'Todos') query.set('modality', activeFilter);
       try {
         const suffix = query.size ? `?${query}` : '';
@@ -63,7 +63,11 @@ export default function Home() {
       )}
 
       <section ref={gridRef} className="flex flex-col md:flex-row justify-between items-center gap-4 scroll-mt-32">
-        <h3 className="text-2xl font-display font-bold">{searchQuery ? `Resultados para "${searchQuery}"` : 'Equipos disponibles'}</h3>
+        <h3 className="text-2xl font-display font-bold">
+          {searchQuery ? `Resultados para "${searchQuery}"` : 
+          categoryQuery ? `Categoría: ${categoryQuery}` : 
+          'Equipos disponibles'}
+        </h3>
         <div className="flex flex-wrap gap-3">
           {['Todos', 'Venta', 'Alquiler', 'Préstamo'].map((filter) => (
             <button key={filter} onClick={() => setActiveFilter(filter)} className={`flex items-center gap-2 px-4 py-2 rounded-xl border-4 border-ranti-ink font-bold text-sm transition-all ${activeFilter === filter ? 'bg-ranti-ink text-white shadow-solid-sm' : 'bg-white hover:bg-gray-100'}`}>

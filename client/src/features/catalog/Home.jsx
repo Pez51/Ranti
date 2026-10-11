@@ -12,6 +12,7 @@ export default function Home() {
   const [searchParams] = useSearchParams();
   const searchQuery = searchParams.get('q') || '';
   const categoryQuery = searchParams.get('category') || ''; // <-- NUEVO
+  const conditionQuery = searchParams.get('condition') || ''; // <-- NUEVO
   const [activeFilter, setActiveFilter] = useState('Todos');
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +36,7 @@ export default function Home() {
       const query = new URLSearchParams();
       if (searchQuery) query.set('search', searchQuery);
       if (categoryQuery) query.set('category', categoryQuery);
+      if (conditionQuery) query.set('condition', conditionQuery); // <-- NUEVO
       if (activeFilter !== 'Todos') query.set('modality', activeFilter);
       try {
         const suffix = query.size ? `?${query}` : '';
@@ -47,7 +49,7 @@ export default function Home() {
     };
     loadProducts();
     return () => controller.abort();
-  }, [activeFilter, searchQuery, categoryQuery]);
+  }, [activeFilter, searchQuery, categoryQuery, conditionQuery]);
 
   return (
     <div className="space-y-10 py-4">

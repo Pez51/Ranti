@@ -141,13 +141,15 @@ export default function Header() {
             </div>
 
             {/* ANIMACIÓN CSS GRID: Esto encoje la barra sin temblores ni saltos de margen */}
+            {/* ANIMACIÓN CSS GRID: Encoge la barra sin temblores */}
             <div 
               className={`grid transition-all duration-300 ease-in-out ${
-                hideSearch ? 'grid-rows-[0fr] opacity-0 mt-0' : 'grid-rows-[1fr] opacity-100 mt-4'
+                hideSearch ? 'grid-rows-[0fr] opacity-0 mt-0' : 'grid-rows-[1fr] opacity-100 mt-3'
               }`}
             >
-              <div className="overflow-hidden">
-                <form onSubmit={handleSearch} className="flex w-full md:w-3/4 lg:w-[60%] mx-auto bg-white rounded-full border-4 border-ranti-ink shadow-solid overflow-hidden focus-within:shadow-solid-hover transition-all focus-within:-translate-y-1">
+              <div className="overflow-hidden px-2">
+                {/* Se agrega mt-1.5 y mb-2.5 al form para que la sombra y la animación focus no se corten */}
+                <form onSubmit={handleSearch} className="mt-1.5 mb-2.5 flex w-full md:w-3/4 lg:w-[60%] mx-auto bg-white rounded-full border-4 border-ranti-ink shadow-solid overflow-hidden focus-within:shadow-solid-hover transition-all focus-within:-translate-y-1">
                   
                   <select 
                     value={conditionTerm}

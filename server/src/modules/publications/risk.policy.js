@@ -34,8 +34,9 @@ export function evaluatePublicationRisk(input) {
   if (input.modality === 'Venta') {
     if (guarantee.cents !== 0n || input.availableFrom != null || input.availableUntil != null) throw invalid();
   } else {
-    if (input.availableFrom == null || input.availableUntil == null ||
-        dateValue(input.availableFrom) >= dateValue(input.availableUntil)) throw invalid();
+    if (input.availableFrom == null || (input.availableUntil == null && input.modality !== 'Alquiler')) throw invalid();
+    const from=dateValue(input.availableFrom);
+    if(input.availableUntil!=null && from>=dateValue(input.availableUntil))throw invalid();
   }
   const exposure = price.cents >= guarantee.cents ? price : guarantee;
   const level = exposure.cents >= 100000n ? 3 : exposure.cents >= 50000n ? 2 : 1;

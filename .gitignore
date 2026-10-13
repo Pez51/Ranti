@@ -20,6 +20,7 @@ yarn-debug.log*
 yarn-error.log*
 logs/
 *.log
+server/uploads/
 
 # Archivos del sistema operativo y editores
 .DS_Store

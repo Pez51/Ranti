@@ -1,16 +1,12 @@
 import { z } from 'zod';
+import { isUcsmInstitutionalEmail } from './identity-provider.js';
+import { passwordInput } from './password-input.js';
 
 export const registerSchema = z.object({
-  email: z.string()
-    .email('Debe ser un correo electrónico válido.')
-    .refine((email) => email.endsWith('@estudiante.ucsm.edu.pe') || email.endsWith('@ucsm.edu.pe'), {
-      message: 'Debe ser un correo institucional válido de la UCSM.'
-    }),
-  password: z.string()
-    .min(8, 'La contraseña debe tener al menos 8 caracteres.')
-    .max(50, 'La contraseña es demasiado larga.'),
-  role: z.enum(['Estudiante', 'Docente', 'Egresado', 'Administrador', 'Moderador', 'Soporte']).optional(),
-  academic_condition: z.string().optional()
+  email: z.string().trim().toLowerCase().refine(isUcsmInstitutionalEmail),
+  password: passwordInput,
+  acceptTerms: z.literal(true),
+  termsVersion: z.string().trim().min(1).max(100),
 });
 
 export const loginSchema = z.object({
@@ -19,6 +15,6 @@ export const loginSchema = z.object({
 });
 
 export const confirmSchema = z.object({
-  email: z.string().email('Formato de correo inválido.'),
-  code: z.string().length(6, 'El código OTP debe tener exactamente 6 dígitos.')
+  challengeId: z.uuid(),
+  code: z.string().regex(/^\d{6}$/, 'El código OTP debe tener exactamente 6 dígitos.')
 });

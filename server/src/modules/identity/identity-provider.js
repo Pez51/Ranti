@@ -14,7 +14,13 @@ export function isUcsmInstitutionalEmail(email) {
   const localBytes = Buffer.byteLength(local, 'utf8');
   if (localBytes < 1 || localBytes > 64) return false;
   if (!domain.split('.').every(label => label.length >= 1 && label.length <= 63 && hostnameLabel.test(label))) return false;
-  return domain === 'ucsm.edu.pe' || domain.endsWith('.ucsm.edu.pe');
+  return domain === 'ucsm.edu.pe' || domain === 'estudiante.ucsm.edu.pe';
+}
+
+export function roleFromInstitutionalEmail(email) {
+  if (!isUcsmInstitutionalEmail(email)) return null;
+  return email.trim().toLowerCase().split('@')[1] === 'estudiante.ucsm.edu.pe'
+    ? 'Estudiante' : 'Egresado';
 }
 
 // Adapters own transport and resolution. Services own account/challenge lifecycle.

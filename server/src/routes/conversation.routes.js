@@ -1,0 +1,15 @@
+import express from 'express';
+import rateLimit from 'express-rate-limit';
+import pool from '../config/database.js';
+import { requireAuth,requireVerifiedAccount } from '../middlewares/auth.middleware.js';
+import { startConversation,startOperationConversation,listConversations,readMessages,sendMessage } from '../modules/operations/conversation.service.js';
+const router=express.Router();
+router.use(rateLimit({windowMs:15*60*1000,max:600,message:'Demasiadas consultas al chat. Espera unos minutos.'}));
+router.use(requireAuth,requireVerifiedAccount);
+const handler=work=>async(req,res,next)=>{try{res.set('Cache-Control','private, no-store').json(await work(req));}catch(error){next(error);}};
+router.post('/publication/:id',handler(req=>startConversation(pool,req.params.id,req.user.id)));
+router.post('/operation/:id',handler(req=>startOperationConversation(pool,req.params.id,req.user.id)));
+router.get('/',handler(req=>listConversations(pool,req.user.id,req.query.offset===undefined?0:Number(req.query.offset))));
+router.get('/:id/messages',handler(req=>readMessages(pool,req.params.id,req.user.id,req.query.before)));
+router.post('/:id/messages',handler(req=>sendMessage(pool,req.params.id,req.user.id,req.body)));
+export default router;

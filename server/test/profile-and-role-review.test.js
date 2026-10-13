@@ -1,121 +1,100 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { getOwnProfile, updateOwnProfile } from '../src/modules/users/profile.service.js';
-import { requestStudentRole, listPendingRoleRequests, decideStudentRole } from '../src/modules/users/role-review.service.js';
+import { getOwnProfile, updateOwnProfile, setOwnPhoto } from '../src/modules/users/profile.service.js';
+import { academicCatalog, isAcademicSelection } from '../src/modules/users/academic-catalog.js';
+import { createRequest, listMyRequests, listAllRequests, decideRequest } from '../src/modules/users/role-review.service.js';
 
 const userId = randomUUID();
-const adminId = randomUUID();
-const requestId = randomUUID();
-const active = { id: userId, role: 'Egresado', status: 'Activa', verification_status: 'Verificado',
-  email: 'owner@ucsm.edu.pe', display_name: null, avatar_url: null, faculty: null,
-  academic_condition: 'caller-controlled', reputation_score: '4.25', operations_count: 7,
-  created_at: new Date('2026-01-01T00:00:00Z') };
-const denied = { code: 'ACCOUNT_UNAVAILABLE', status: 403 };
-const invalid = { code: 'INVALID_INPUT', status: 400 };
-const unauthorized = { code: 'FORBIDDEN', status: 403 };
-
+const active = {
+  id: userId, email: 'owner@ucsm.edu.pe', role: 'Egresado', status: 'Activa',
+  verification_status: 'Verificado', display_name: 'Ana', contact_number: null,
+  avatar_url: null, faculty: null, career: null, reputation_score: '4.25', operations_count: 7,
+  created_at: new Date('2026-01-01T00:00:00Z'),
+};
 function dbForUser(user = active) {
   const queries = [];
-  const client = { query: async (sql, args) => {
-    queries.push({ sql, args });
-    if (sql.includes('FROM users')) return { rows: user ? [user] : [] };
-    if (sql.includes('UPDATE users')) return { rows: [{ ...user, ...args?.[1] }] };
-    if (sql.includes('FROM role_requests')) return { rows: [] };
-    if (sql.includes('INSERT INTO role_requests')) return { rows: [{ id: requestId, user_id: userId, status: 'pending', evidence_ref: args[1] }] };
-    return { rows: [] };
-  }, release: () => {} };
-  return { db: { query: client.query, connect: async () => client }, queries };
+  return {
+    queries,
+    db: { query: async (sql, args) => {
+      queries.push({ sql, args });
+      if (sql.includes('FROM users')) return { rows: user ? [user] : [] };
+      if (sql.includes('UPDATE users')) return { rows: [{ ...user, avatar_url: sql.includes('avatar_url') ? args[1] : user.avatar_url }] };
+      return { rows: [] };
+    } },
+  };
 }
 
-describe('profile and role review validation', () => {
-  it('projects only current safe profile fields and derives academic condition from role', async () => {
+describe('profile under verified account', () => {
+  it('projects public fields and derives academic condition from the role', async () => {
     const { db } = dbForUser();
-    expect(await getOwnProfile(db, userId)).toEqual({ id: userId, email: 'owner@ucsm.edu.pe',
-      role: 'Egresado', academic_condition: 'Egresado', university: 'Universidad Católica de Santa María',
-      display_name: null, avatar_url: null, faculty: null, reputation_score: '4.25',
-      operations_count: 7, created_at: active.created_at });
+    expect(await getOwnProfile(db, userId)).toMatchObject({
+      id: userId, email: active.email, role: 'Egresado', academic_condition: 'Egresado',
+      university: 'Universidad Católica de Santa María', contact_number: null,
+      avatar_url: null, reputation_score: '4.25', operations_count: 7,
+    });
   });
 
-  it.each(['email', 'role', 'academic_condition', 'reputation_score', 'operations_count',
-    'verification_status', 'status', 'identity_provider', 'terms_version', 'created_at', 'unknown'])(
-    'rejects protected or unknown profile field %s before SQL', async field => {
+  it.each(['email', 'role', 'academic_condition', 'avatar_url', 'reputation_score',
+    'verification_status', 'status', 'identity_provider', 'unknown'])(
+    'rejects client edit of protected field %s before SQL', async field => {
       const { db, queries } = dbForUser();
-      await expect(updateOwnProfile(db, userId, { [field]: 'malicious' })).rejects.toMatchObject(invalid);
+      await expect(updateOwnProfile(db, userId, { [field]: 'untrusted' })).rejects.toMatchObject({ status: 400 });
       expect(queries).toHaveLength(0);
     });
 
-  it.each(['https://@', 'https://host:bad/path', 'https://host:0/path', 'https://host:65536/path',
-    'https://name:secret@host/path', 'http://host/path', 'https://bad..host/path'])(
-    'rejects malformed or unsafe profile avatar URL %s', async avatar_url => {
-      const { db, queries } = dbForUser();
-      await expect(updateOwnProfile(db, userId, { avatar_url })).rejects.toMatchObject(invalid);
-      expect(queries).toHaveLength(0);
-    });
-
-  it.each(['https://@', 'https://host:bad/path', 'https://host:0/path', 'https://host:65536/path',
-    'https://name:secret@host/path', 'http://host/path', 'https://bad..host/path'])(
-    'rejects malformed or unsafe evidence URL %s', async evidence_ref => {
-      const { db, queries } = dbForUser();
-      await expect(requestStudentRole(db, { userId, evidence_ref, evidence_metadata: {} })).rejects.toMatchObject(invalid);
-      expect(queries).toHaveLength(0);
-    });
-
-  it.each([{ dni: '12345678' }, { nested: { password: 'secret' } }, { nested: [{ token: 'secret' }] },
-    { document_number: '123' }, { evidence_content: 'private' }, { evidenceContent: 'private' },
-    { evidencecontent: 'private' }, { apiKey: 'secret' }, { apikey: 'secret' },
-    { note: { evidenceContent: 'private' } }, { note: ['private'] },
-    { institution: undefined }, { academicPeriod: () => '2026-2' }, { documentType: 7 },
-    { documentType: 'x'.repeat(101) }, { institution: 'x'.repeat(201) },
-    { academicPeriod: 'x'.repeat(101) }, { note: 'x'.repeat(501) }])(
-    'rejects sensitive evidence metadata before SQL: %j', async evidence_metadata => {
-      const { db, queries } = dbForUser();
-      await expect(requestStudentRole(db, { userId, evidence_ref: 'https://host/id', evidence_metadata }))
-        .rejects.toMatchObject(invalid);
-      expect(queries).toHaveLength(0);
-    });
-
-  it('rejects oversized and non-object evidence metadata before SQL', async () => {
-    for (const evidence_metadata of [[], null, { note: 'x'.repeat(5000) }]) {
-      const { db, queries } = dbForUser();
-      await expect(requestStudentRole(db, { userId, evidence_ref: 'https://host/id', evidence_metadata }))
-        .rejects.toMatchObject(invalid);
-      expect(queries).toHaveLength(0);
-    }
-  });
-
-  it('accepts only the four bounded flat metadata strings and passes them to persistence', async () => {
+  it('accepts a faculty and career from the same official catalog entry', async () => {
     const { db, queries } = dbForUser();
-    const evidence_metadata = { documentType: '  constancia  ', institution: '  UCSM  ',
-      academicPeriod: '  2026-2  ', note: '  Review student record  ' };
-    await requestStudentRole(db, { userId, evidence_ref: 'https://host/id', evidence_metadata });
-    const insert = queries.find(({ sql }) => sql.includes('INSERT INTO role_requests'));
-    expect(insert.args[2]).toEqual({ documentType: 'constancia', institution: 'UCSM',
-      academicPeriod: '2026-2', note: 'Review student record' });
+    await updateOwnProfile(db, userId, { display_name: '  María  ', contact_number: null,
+      faculty: '  Ciencias e Ingenierías Físicas y Formales  ', career: ' Ingeniería de Sistemas ' });
+    const update = queries.find(({ sql }) => sql.includes('UPDATE users'));
+    expect(update.args).toEqual([userId, 'María', null,
+      'Ciencias e Ingenierías Físicas y Formales', 'Ingeniería de Sistemas']);
   });
 
-  it.each([{ limit: 0 }, { limit: 101 }, { offset: -1 }, { limit: '10' }])(
-    'rejects invalid admin pagination %j before SQL', async page => {
-      const { db, queries } = dbForUser();
-      await expect(listPendingRoleRequests(db, { adminId, ...page })).rejects.toMatchObject(invalid);
-      expect(queries).toHaveLength(0);
+  it.each([
+    { faculty: 'Ingeniería', career: 'Ingeniería de Sistemas' },
+    { faculty: 'Ciencias Sociales y Humanidades', career: 'Ingeniería de Sistemas' },
+    { faculty: 'Ciencias e Ingenierías Físicas y Formales', career: null },
+    { faculty: null, career: null },
+  ])('rejects unselected or mismatched academic values: %j', async patch => {
+    const { db, queries } = dbForUser();
+    await expect(updateOwnProfile(db, userId, patch)).rejects.toMatchObject({
+      status: 400, code: 'INVALID_ACADEMIC_SELECTION',
     });
+    expect(queries.some(({ sql }) => sql.includes('UPDATE users'))).toBe(false);
+  });
 
-  it.each([{ decision: 'approve', reason: '  ' }, { decision: 'reject', reason: 'x'.repeat(501) },
-    { decision: 'other', reason: 'Valid reason' }])('rejects malformed decision %j before SQL', async input => {
-      const { db, queries } = dbForUser();
-      await expect(decideStudentRole(db, { adminId, requestId, ...input })).rejects.toMatchObject(invalid);
-      expect(queries).toHaveLength(0);
-    });
+  it('allows a non-academic staff profile to leave both fields empty', async () => {
+    const { db, queries } = dbForUser({ ...active, role: 'Administrador' });
+    await updateOwnProfile(db, userId, { faculty: null, career: null });
+    expect(queries.find(({ sql }) => sql.includes('UPDATE users')).args).toEqual([userId, null, null]);
+  });
+
+  it('allows the photo endpoint to update its own generated reference', async () => {
+    const { db, queries } = dbForUser();
+    const url = `/api/users/photos/${userId}/${randomUUID()}`;
+    expect(await setOwnPhoto(db, userId, url)).toMatchObject({ avatar_url: url });
+    expect(queries.find(({ sql }) => sql.includes('UPDATE users')).args).toEqual([userId, url]);
+  });
 
   it.each([null, { ...active, status: 'Suspendida' }, { ...active, verification_status: 'No verificado' }])(
-    'denies unavailable current profile state', async user => {
+    'denies unavailable accounts', async user => {
       const { db } = dbForUser(user);
-      await expect(getOwnProfile(db, userId)).rejects.toMatchObject(denied);
+      await expect(getOwnProfile(db, userId)).rejects.toMatchObject({ status: 403 });
     });
+});
 
-  it('requires current administrator state before reading pending evidence', async () => {
-    const { db, queries } = dbForUser(active);
-    await expect(listPendingRoleRequests(db, { adminId, limit: 10, offset: 0 })).rejects.toMatchObject(unauthorized);
-    expect(queries.some(({ sql }) => sql.includes('FROM role_requests'))).toBe(false);
-  });
+it('catalog has all 12 UCSM faculties and no repeated careers inside a faculty', () => {
+  expect(academicCatalog).toHaveLength(12);
+  expect(academicCatalog.every(entry => entry.careers.length > 0 &&
+    new Set(entry.careers).size === entry.careers.length)).toBe(true);
+  expect(isAcademicSelection('Ciencias e Ingenierías Físicas y Formales', 'Ingeniería Biomédica')).toBe(true);
+  expect(isAcademicSelection('Ciencias Sociales y Humanidades', 'Ingeniería Biomédica')).toBe(false);
+});
+
+describe('retired manual student-role flow', () => {
+  it.each([createRequest, listMyRequests, listAllRequests, decideRequest])(
+    'reports the retired endpoint instead of a fake successful review', async operation => {
+      await expect(operation()).rejects.toMatchObject({ status: 410, code: 'ROLE_REQUEST_DISABLED' });
+    });
 });

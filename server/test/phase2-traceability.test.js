@@ -22,11 +22,12 @@ describe('Phase 2 operational documentation contract', () => {
     expect(doc).toMatch(/más de cuatro imágenes/);
     expect(doc).toMatch(/atómic/);
   });
-  it('states pilot thresholds and the default Egresado/manual Estudiante contract', () => {
+  it('states pilot thresholds and the exact domain-derived role contract', () => {
     const doc = read('README.md');
     for (const term of ['pilot-v1', 'S/500', 'S/1000', '499.99', '999.99', 'Egresado', 'Estudiante']) expect(doc).toContain(term);
-    expect(doc).toMatch(/revisión manual/);
-    expect(doc).toMatch(/por defecto.{0,30}Egresado/);
+    expect(doc).toContain('@estudiante.ucsm.edu.pe');
+    expect(doc).toContain('@ucsm.edu.pe');
+    expect(doc).toMatch(/sin revisión administrativa para Estudiante/);
   });
   it('warns about simulation and keeps later RFs and RNF evidence pending', () => {
     const doc = read('README.md'); const revision = read('docs/revision-informe.md');

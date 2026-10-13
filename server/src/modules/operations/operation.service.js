@@ -1,6 +1,7 @@
 import pool from '../../config/database.js';
 import * as operationRepo from './operation.repository.js';
 import { AppError } from '../../shared/errors/app-error.js';
+import { decideOperation } from './operation-request.service.js';
 
 // 1. Crear una nueva operación (Reserva / Compra) - Uso de Transacciones
 export const createOperation = async (operationData, userId) => {
@@ -130,23 +131,17 @@ export const getParticipantOperation = async (operationId, userId) => {
 
 // 5. Aceptar Operación (Oferente)
 export const acceptOperation = async (operationId, userId) => {
-  const query = `UPDATE operations SET status = 'Aceptada' WHERE id = $1 AND oferente_id = $2`;
-  await pool.query(query, [operationId, userId]);
-  return { message: 'Operación aceptada exitosamente.' };
+  return decideOperation(pool, operationId, userId, { decision: 'accept' });
 };
 
 // 6. Rechazar Operación (Oferente)
-export const rejectOperation = async (operationId, userId) => {
-  const query = `UPDATE operations SET status = 'Rechazada' WHERE id = $1 AND oferente_id = $2`;
-  await pool.query(query, [operationId, userId]);
-  return { message: 'Operación rechazada.' };
+export const rejectOperation = async (operationId, userId, reason) => {
+  return decideOperation(pool, operationId, userId, { decision: 'reject', reason });
 };
 
 // 7. Cancelar Operación (Demandante)
-export const cancelOperation = async (operationId, userId) => {
-  const query = `UPDATE operations SET status = 'Cancelada' WHERE id = $1 AND demandante_id = $2`;
-  await pool.query(query, [operationId, userId]);
-  return { message: 'Operación cancelada.' };
+export const cancelOperation = async (operationId, userId, reason) => {
+  return decideOperation(pool, operationId, userId, { decision: 'cancel', reason });
 };
 
 // 8. Trabajo en Segundo Plano: Expirar operaciones abandonadas

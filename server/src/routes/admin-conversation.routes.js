@@ -1,0 +1,13 @@
+import express from 'express';
+import rateLimit from 'express-rate-limit';
+import pool from '../config/database.js';
+import { requireAuth,requireVerifiedAccount,requireRole } from '../middlewares/auth.middleware.js';
+import { listAdminConversations,readAdminMessages } from '../modules/operations/admin-conversations.service.js';
+const router=express.Router();
+router.use(rateLimit({windowMs:15*60*1000,max:150,message:'Demasiadas revisiones de chats. Espera unos minutos.'}));
+router.use(requireAuth,requireVerifiedAccount,requireRole('Administrador'));
+router.use((req,res,next)=>{res.set('Cache-Control','private, no-store');next();});
+const handler=work=>async(req,res,next)=>{try{res.json(await work(req));}catch(error){next(error);}};
+router.get('/',handler(req=>listAdminConversations(pool,req.user.id,req.query.offset===undefined?0:Number(req.query.offset))));
+router.get('/:id/messages',handler(req=>readAdminMessages(pool,req.params.id,req.user.id,req.query.before)));
+export default router;

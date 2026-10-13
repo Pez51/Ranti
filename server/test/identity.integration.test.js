@@ -38,12 +38,9 @@ describe.skipIf(!enabled)('verified institutional registration with disposable P
 
   it.each([
     ['base domain', local => `${local}@ucsm.edu.pe`],
-    ['subdomain', local => `${local}@faculty.ucsm.edu.pe`],
-    ['uppercase and whitespace', local => ` ${local.toUpperCase()}@FACULTY.UCSM.EDU.PE `],
+    ['student domain', local => `${local}@estudiante.ucsm.edu.pe`],
+    ['uppercase and whitespace', local => ` ${local.toUpperCase()}@ESTUDIANTE.UCSM.EDU.PE `],
     ['64-byte local part', local => `${local.padEnd(64, 'a')}@ucsm.edu.pe`],
-    ['63-byte DNS label', local => `${local}@${'a'.repeat(63)}.ucsm.edu.pe`],
-    ['254-byte address', local => `${local.padEnd(64, 'a')}@${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(49)}.ucsm.edu.pe`],
-    ['internal hostname hyphen', local => `${local}@valid-label.ucsm.edu.pe`],
   ])('registers valid institutional email boundary: %s', async (_name, makeEmail) => {
     const email = makeEmail(randomUUID());
     const response = await request(app).post('/api/auth/register').send(input({ email }));
@@ -55,6 +52,7 @@ describe.skipIf(!enabled)('verified institutional registration with disposable P
 
   it.each([
     ['trailing hostname hyphen', local => `${local}@bad-.ucsm.edu.pe`],
+    ['other subdomain', local => `${local}@faculty.ucsm.edu.pe`],
     ['leading hostname hyphen', local => `${local}@-bad.ucsm.edu.pe`],
     ['64-byte DNS label', local => `${local}@${'a'.repeat(64)}.ucsm.edu.pe`],
     ['65-byte local part', local => `${local.padEnd(65, 'a')}@ucsm.edu.pe`],
@@ -73,7 +71,7 @@ describe.skipIf(!enabled)('verified institutional registration with disposable P
   });
 
   it('stores consent and hashes, ignores caller role, and emits no JWT before verification', async () => {
-    const data = input({ email: ` Identity-${randomUUID()}@FACULTAD.UCSM.EDU.PE `, role: 'Administrador' });
+    const data = input({ email: ` Identity-${randomUUID()}@UCSM.EDU.PE `, role: 'Administrador' });
     const response = await request(app).post('/api/auth/register').send(data);
     expect(response.status).toBe(201);
     expect(response.body).not.toHaveProperty('token');

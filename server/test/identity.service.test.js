@@ -8,11 +8,11 @@ const simulated = await import('../src/modules/identity/simulated-identity-provi
 const service = await import('../src/modules/identity/identity.service.js').catch(() => ({}));
 
 describe('institutional identity boundary', () => {
-  it.each(['person@ucsm.edu.pe', 'person@estudiante.ucsm.edu.pe', ' Person@FACULTAD.UCSM.EDU.PE '])('accepts %s', email => {
+  it.each(['person@ucsm.edu.pe', 'person@estudiante.ucsm.edu.pe', ' Person@ESTUDIANTE.UCSM.EDU.PE '])('accepts %s', email => {
     expect(boundary.isUcsmInstitutionalEmail).toBeTypeOf('function');
     expect(boundary.isUcsmInstitutionalEmail(email)).toBe(true);
   });
-  it.each(['person@gmail.com', 'person@ucsm.edu.pe.other.com', 'person@evilucsm.edu.pe', 'person@ucsm.edu.pe.',
+  it.each(['person@gmail.com', 'person@facultad.ucsm.edu.pe', 'person@ucsm.edu.pe.other.com', 'person@evilucsm.edu.pe', 'person@ucsm.edu.pe.',
     'person@@ucsm.edu.pe', 'a b@ucsm.edu.pe', 'a..b@ucsm.edu.pe', '@ucsm.edu.pe', 'a@-bad.ucsm.edu.pe',
     'a@ucsm.edu.pе', '', null, {}, 'a@ucsm.edu.pe\nother'])('rejects %j', email => {
     expect(boundary.isUcsmInstitutionalEmail).toBeTypeOf('function');
@@ -20,9 +20,9 @@ describe('institutional identity boundary', () => {
   });
   const addressBoundaries = [
     ['64-byte local part', `${'a'.repeat(64)}@ucsm.edu.pe`, true],
-    ['63-byte DNS label', `p@${'a'.repeat(63)}.ucsm.edu.pe`, true],
-    ['254-byte address', `${'a'.repeat(64)}@${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(49)}.ucsm.edu.pe`, true],
-    ['internal hostname hyphen', 'p@valid-label.ucsm.edu.pe', true],
+    ['63-byte DNS label', `p@${'a'.repeat(63)}.ucsm.edu.pe`, false],
+    ['254-byte address', `${'a'.repeat(64)}@${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(49)}.ucsm.edu.pe`, false],
+    ['internal hostname hyphen', 'p@valid-label.ucsm.edu.pe', false],
     ['trailing hostname hyphen', 'p@bad-.ucsm.edu.pe', false],
     ['leading hostname hyphen', 'p@-bad.ucsm.edu.pe', false],
     ['64-byte DNS label', `p@${'a'.repeat(64)}.ucsm.edu.pe`, false],

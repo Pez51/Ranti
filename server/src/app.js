@@ -12,6 +12,8 @@ import publicationRoutes, { publicationAdminRoutes } from './routes/publication.
 import operationRoutes from './routes/operation.routes.js'; 
 import notificationRoutes from './routes/notification.routes.js';
 import userRoutes, { adminRoutes } from './routes/user.routes.js';
+import conversationRoutes from './routes/conversation.routes.js';
+import adminConversationRoutes from './routes/admin-conversation.routes.js';
 // (Se eliminó la importación duplicada de errorHandler que causaba el fallo)
 
 const app = express();
@@ -29,6 +31,7 @@ app.use(cors({
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
   max: 100, // Límite de 100 peticiones por IP
+  skip: req=>req.method==='GET'&&(/^\/conversations(?:\/|$)/.test(req.path)), // Chat reads have their own authenticated limit.
   message: 'Demasiadas peticiones desde esta IP, intenta de nuevo más tarde.'
 });
 app.use('/api', limiter);
@@ -43,6 +46,8 @@ app.use(morgan('dev'));
 app.use('/api/auth', authRoutes);
 app.use('/api/publications', publicationRoutes);
 app.use('/api/operations', operationRoutes); 
+app.use('/api/conversations', conversationRoutes);
+app.use('/api/admin/conversations', adminConversationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);

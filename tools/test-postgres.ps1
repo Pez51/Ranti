@@ -1,5 +1,6 @@
 param(
-    [string]$PostgresBin = 'C:\Program Files\PostgreSQL\17\bin'
+    [string]$PostgresBin = 'C:\Program Files\PostgreSQL\17\bin',
+    [string[]]$TestArguments = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,7 +39,7 @@ try {
     $env:RANTI_EPHEMERAL_DB = '1'
     Push-Location (Join-Path $repoRoot 'server')
     try {
-        npm test
+        npm test -- @TestArguments
         $testExitCode = $LASTEXITCODE
     } finally {
         Pop-Location

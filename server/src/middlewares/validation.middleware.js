@@ -7,7 +7,9 @@ export const validateSchema = (schema) => (req, res, next) => {
     next(); // Si todo es correcto, pasa al controlador
   } catch (error) {
     // Si falla, Zod devuelve un arreglo de errores. Los extraemos y formateamos.
-    const errorMessages = error.errors.map((err) => `${err.path.join('.')}: ${err.message}`).join(' | ');
+    const issues = error.issues || error.errors;
+    if (!issues) return next(error);
+    const errorMessages = issues.map((err) => `${err.path.join('.')}: ${err.message}`).join(' | ');
     
     next(new AppError({ 
       status: 400, 

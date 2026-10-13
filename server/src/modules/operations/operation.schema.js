@@ -1,9 +1,8 @@
 import { z } from 'zod';
+import { parseOperationRequest } from './operation.policy.js';
 
-export const createOperationSchema = z.object({
-  publication_id: z.union([z.string(), z.number()]), // Soporta UUID o ID numérico
-  start_date: z.string().datetime('Formato de fecha inválido').optional(),
-  end_date: z.string().datetime('Formato de fecha inválido').optional()
+export const createOperationSchema=z.unknown().superRefine((value,context)=>{
+  try{parseOperationRequest(value);}catch{context.addIssue({code:'custom',message:'Confirma el precio, la garantía, la versión y las fechas de la publicación.'});}
 });
 
 export const confirmDeliverySchema = z.object({

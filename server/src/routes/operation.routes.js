@@ -1,7 +1,7 @@
 import express from 'express';
 import { 
   createOperation, listParticipantOperations, getParticipantOperation, 
-  acceptOperation, rejectOperation, cancelOperation, confirmDelivery 
+  acceptOperation, rejectOperation, cancelOperation, confirmDelivery, coordinateHandoff, getCalendar, setCalendar, paySimulation
 } from '../controllers/operation.controller.js';
 import { requireAuth, requireVerifiedAccount } from '../middlewares/auth.middleware.js';
 
@@ -17,6 +17,10 @@ router.use(requireAuth, requireVerifiedAccount);
 // Rutas protegidas por Zod
 router.post('/', validateSchema(createOperationSchema), createOperation);
 router.post('/:id/confirm', validateSchema(confirmDeliverySchema), confirmDelivery);
+router.post('/:id/handoff', coordinateHandoff);
+router.get('/:id/calendar', getCalendar);
+router.post('/:id/calendar', setCalendar);
+router.post('/:id/payment-simulation', paySimulation);
 
 // Rutas de cambio de estado o consulta (No requieren validación de body porque actúan sobre el ID de la URL)
 router.get('/mine', listParticipantOperations);

@@ -10,7 +10,7 @@ const termsInvalid = () => new AppError({ status: 422, code: 'OPERATION_TERMS_IN
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const uuid = z.uuid();
 const requestKeys = new Set(['publication_id', 'requested_price', 'requested_guarantee_amount',
-  'requested_contract_version', 'start_date', 'end_date']);
+  'requested_contract_version','requested_rental_unit', 'offered_price', 'start_date', 'end_date']);
 const date = value => { try { return dateValue(value); } catch { throw invalid(); } };
 const amount = value => { try { return money(value).text; } catch { throw invalid(); } };
 
@@ -35,6 +35,11 @@ export function parseOperationRequest(input) {
     requested_guarantee_amount: amount(input.requested_guarantee_amount),
     requested_contract_version: input.requested_contract_version,
   };
+  if(Object.hasOwn(input,'requested_rental_unit')){
+    if(!['hour','day','week','month'].includes(input.requested_rental_unit))throw invalid();
+    result.requested_rental_unit=input.requested_rental_unit;
+  }
+  if (Object.hasOwn(input, 'offered_price')) result.offered_price = amount(input.offered_price);
   if (Object.hasOwn(input, 'start_date')) result.start_date = date(input.start_date);
   if (Object.hasOwn(input, 'end_date')) result.end_date = date(input.end_date);
   return result;
@@ -77,16 +82,25 @@ export function validateRequestedTerms(publication, request, now) {
     requestedPrice = money(request.requested_price); requestedGuarantee = money(request.requested_guarantee_amount);
   } catch { throw termsInvalid(); }
   if (price.cents !== requestedPrice.cents || guarantee.cents !== requestedGuarantee.cents) throw termsInvalid();
+  if (request.offered_price != null) {
+    let offered;
+    try { offered = money(request.offered_price); } catch { throw termsInvalid(); }
+    if (!['Venta', 'Alquiler'].includes(publication.modality) || offered.cents <= 0n || offered.cents >= price.cents) throw termsInvalid();
+  }
   if (publication.modality === 'Venta') {
+    if(request.requested_rental_unit!=null)throw termsInvalid();
     if (request.start_date != null || request.end_date != null ||
         publication.available_from != null || publication.available_until != null || guarantee.cents !== 0n || price.cents <= 0n) throw termsInvalid();
     return true;
   }
+  if(publication.modality==='Alquiler'&&(request.requested_rental_unit||'day')!==(publication.rental_unit||'day'))throw termsInvalid();
+  if(publication.modality==='Préstamo'&&request.requested_rental_unit!=null)throw termsInvalid();
   if (publication.modality === 'Préstamo' ? price.cents !== 0n : price.cents <= 0n) throw termsInvalid();
   const start = instant(request.start_date); const end = instant(request.end_date);
-  const availableFrom = instant(publication.available_from); const availableUntil = instant(publication.available_until);
+  const availableFrom = instant(publication.available_from);
+  const availableUntil=publication.available_until==null&&publication.modality==='Alquiler'?null:instant(publication.available_until);
   const current = instant(now);
-  if (start >= end || start < availableFrom || end > availableUntil || start < current) throw termsInvalid();
+  if (start >= end || start < availableFrom || (availableUntil&&end>availableUntil) || start < current) throw termsInvalid();
   return true;
 }
 
@@ -96,7 +110,9 @@ export function buildContractSnapshot(publication, operation, acceptedAt) {
     publication_id: publication.id, contract_version: publication.contract_version,
     title: publication.title, description: publication.description, category: publication.category,
     condition: publication.condition, modality: publication.modality,
-    agreed_price: amount(publication.price ?? 0), guarantee_amount: amount(publication.guarantee_amount ?? 0),
+    ...(publication.modality==='Alquiler'?{rental_unit:publication.rental_unit||'day'}:{}),
+    agreed_price: amount(operation.offered_price ?? publication.price ?? 0), guarantee_amount: amount(publication.guarantee_amount ?? 0),
+    ...(operation.offered_price != null ? { published_price: amount(operation.requested_price), offer_accepted: true } : {}),
     start_date: operation.start_date == null ? null : instant(operation.start_date).toISOString(),
     end_date: operation.end_date == null ? null : instant(operation.end_date).toISOString(),
     demandante_id: operation.demandante_id, oferente_id: operation.oferente_id, accepted_at: accepted,
@@ -110,6 +126,8 @@ const edges = new Map([
   ['Pendiente|Cancelada|requester|pending_request', 'no_reservation'],
   ['Pendiente|Expirada|system|expired_request', 'no_reservation'],
   ['Aceptada|Cancelada|requester|pre_economic', 'release_reservation'],
+  ['Pendiente de pago/garantía|Cancelada|requester|pre_economic', 'release_reservation'],
+  ['Lista para entrega|Cancelada|requester|pre_economic', 'release_reservation'],
   ['Pendiente de pago/garantía|Cancelación en reversión|requester|pre_delivery', 'retain_reservation'],
   ['Lista para entrega|Cancelación en reversión|requester|pre_delivery', 'retain_reservation'],
 ]);
@@ -139,8 +157,10 @@ export function authorizeTransition(rule, context) {
     validateRequestedTerms(context.publication, {
       publication_id: operation.publication_id, requester_id: operation.demandante_id,
       requested_price: operation.requested_price,
+      offered_price: operation.offered_price,
       requested_guarantee_amount: operation.requested_guarantee_amount,
       requested_contract_version: operation.requested_contract_version,
+      requested_rental_unit:operation.requested_rental_unit??undefined,
       start_date: operation.start_date, end_date: operation.end_date,
     }, current);
     if (context.publication.owner_id !== operation.oferente_id || context.publication.modality !== operation.modality) throw conflict();
@@ -150,8 +170,10 @@ export function authorizeTransition(rule, context) {
       validateRequestedTerms(context.publication, {
         publication_id: operation.publication_id, requester_id: operation.demandante_id,
         requested_price: operation.requested_price,
+        offered_price: operation.offered_price,
         requested_guarantee_amount: operation.requested_guarantee_amount,
         requested_contract_version: operation.requested_contract_version,
+        requested_rental_unit:operation.requested_rental_unit??undefined,
         start_date: operation.start_date, end_date: operation.end_date,
       }, current);
       if (context.publication.owner_id === operation.oferente_id && context.publication.modality === operation.modality) throw conflict();
@@ -166,9 +188,9 @@ function pick(source, fields) {
   return Object.fromEntries(fields.filter(field => Object.hasOwn(source, field)).map(field => [field, source[field]]));
 }
 const snapshotFields = ['publication_id', 'contract_version', 'title', 'description', 'category', 'condition',
-  'modality', 'agreed_price', 'guarantee_amount', 'start_date', 'end_date', 'demandante_id', 'oferente_id', 'accepted_at'];
+  'modality','rental_unit', 'agreed_price', 'published_price', 'offer_accepted', 'guarantee_amount', 'start_date', 'end_date', 'demandante_id', 'oferente_id', 'accepted_at'];
 const operationFields = ['id', 'publication_id', 'modality', 'status', 'start_date', 'end_date',
-  'requested_price', 'requested_guarantee_amount', 'requested_contract_version', 'request_expires_at',
+  'requested_price','offered_price','requested_rental_unit', 'requested_guarantee_amount', 'requested_contract_version', 'request_expires_at',
   'accepted_at', 'decided_at', 'cancelled_at', 'decision_reason', 'cancellation_reason', 'created_at', 'updated_at'];
 const publicationFields = ['id', 'title', 'primary_image', 'contract_version'];
 const counterpartFields = ['id', 'display_name', 'reputation_score', 'operations_count'];

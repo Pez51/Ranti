@@ -1,14 +1,17 @@
-import pool from '../../config/database.js';
+import { AppError } from '../../shared/errors/app-error.js';
 
-export const createRequest = async (userId, data) => {
-  return { message: 'Solicitud de cambio de rol enviada' };
+const disabled = () => new AppError({ status: 410, code: 'ROLE_REQUEST_DISABLED',
+  message: 'El rol se determina por el dominio del correo institucional verificado.' });
+
+export const createRequest = async () => {
+  throw disabled();
 };
 export const listMyRequests = async (userId) => {
-  return [];
+  throw disabled();
 };
 export const listAllRequests = async () => {
-  return [];
+  throw disabled();
 };
-export const decideRequest = async (requestId, data) => {
-  return { message: 'Solicitud evaluada por el administrador' };
+export const decideRequest = async () => {
+  throw disabled();
 };

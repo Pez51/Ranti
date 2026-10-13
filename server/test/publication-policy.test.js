@@ -24,7 +24,7 @@ describe('pilot-v1 exact publication policy', () => {
     { modality: 'Venta', price: 1, guaranteeAmount: 1 },
     { modality: 'Venta', price: 1, availableFrom: rental.availableFrom },
     { ...rental, price: 0 }, { ...rental, guaranteeAmount: -1 },
-    { ...rental, availableUntil: null }, { ...rental, availableFrom: '2026-02-30' },
+    { ...rental, modality:'Préstamo',price:0,availableUntil: null }, { ...rental, availableFrom: '2026-02-30' },
     { ...rental, availableFrom: '0000-10-01' },
     { ...rental, availableFrom: rental.availableUntil },
     { ...rental, availableFrom: '2026-10-04' },
@@ -32,7 +32,7 @@ describe('pilot-v1 exact publication policy', () => {
     { ...rental, modality: 'Préstamo', availableFrom: null },
     { ...rental, modality: 'Unknown' }, { modality: 'Venta', price: 1, currency: 'USD' },
   ])('rejects contradictory economics or dates: %j', input => expect(() => evaluate(input)).toThrow());
-  it.each([{ modality: 'Venta', price: '0.01' }, rental,
+  it.each([{ modality: 'Venta', price: '0.01' }, rental,{...rental,availableUntil:null},
     { ...rental, modality: 'Préstamo', price: 0 }, { ...rental, modality: 'Préstamo', price: null }])(
     'accepts valid modality economics: %j', input => expect(evaluate(input).level).toBe(1));
   it('interprets date-only availability at Peru midnight, matching reservation dates', () => {

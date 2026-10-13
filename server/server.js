@@ -1,5 +1,6 @@
 import app from './src/app.js';
-import { testConnection } from './src/config/database.js';
+import pool, { testConnection } from './src/config/database.js';
+import { prepareDevelopmentDatabase } from './src/db/prepare-development-database.js';
 import { env } from './src/config/env.js';
 import { startCronJobs } from './src/jobs/scheduler.js';
 
@@ -7,6 +8,12 @@ const startServer = async () => {
   try {
     // 1. Probar la base de datos antes de levantar nada
     await testConnection();
+    // Complete pending schema changes before development HTTP requests can run.
+    // Production migrations remain an explicit deployment operation.
+    if (env.NODE_ENV === 'development') {
+      const migrations = await prepareDevelopmentDatabase(pool);
+      if (migrations.applied.length) console.log('Migraciones aplicadas:', migrations.applied.join(', '));
+    }
 
     // 2. Iniciar el "reloj" de trabajos automáticos en segundo plano
     startCronJobs();

@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import ManagePublications from './ManagePublications';
 import { apiRequest } from '../../lib/api';
 import { change, click, session, publication } from '../../test/workflows';
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
+vi.mock('../../lib/api', async original => ({ ...(await original()), apiRequest: vi.fn() }));
 beforeEach(() => { vi.resetAllMocks(); session(); });
 function setup() { render(<MemoryRouter><ManagePublications /></MemoryRouter>); }
 function deferred() {
@@ -13,6 +13,14 @@ function deferred() {
   const promise = new Promise(done => { resolve = done; });
   return { promise, resolve };
 }
+it('offers a clear empty state and styled creation links to the publication form', async () => {
+  apiRequest.mockResolvedValueOnce([]); setup();
+  const empty = await screen.findByRole('region', { name: 'Todavía no tienes publicaciones.' });
+  expect(empty).toHaveClass('publications-empty');
+  expect(screen.getByRole('link', { name: 'Crear mi primera publicación' })).toHaveAttribute('href', '/publicar');
+  expect(screen.getByRole('link', { name: 'Crear publicación' })).toHaveClass('publication-create');
+  expect(screen.getByRole('button', { name: 'Actualizar publicaciones' })).toBeEnabled();
+});
 it.each([['Activa', 'Pausar', 'pause', 'Pausada'], ['Pausada', 'Reactivar', 'reactivate', 'Pendiente de revisión'], ['Borrador', 'Enviar', 'submit', 'Pendiente de revisión'], ['Pendiente de revisión', 'Retirar', 'withdraw', 'Retirada']])('confirms %s lifecycle before requesting %s', async (status, label, action, result) => {
   apiRequest.mockResolvedValueOnce([{ ...publication, status }]).mockResolvedValueOnce({ ...publication, status: result }); setup(); await screen.findByText('Calculadora'); click(label); expect(apiRequest).toHaveBeenCalledTimes(1); expect(screen.getByRole('dialog')).toHaveTextContent(label); click('Confirmar');
   expect(await screen.findByText(`Estado: ${result}`)).toBeInTheDocument(); expect(apiRequest).toHaveBeenLastCalledWith(`/publications/pub-1/${action}`, expect.objectContaining({ method: 'POST', token: 'real-token' }));

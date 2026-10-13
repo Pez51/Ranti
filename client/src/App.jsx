@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Layout from './components/layout/Layout';
+import AppToast from './components/layout/AppToast';
 import RequireSession from './components/auth/RequireSession';
 
 // Vistas Generales
@@ -20,6 +21,8 @@ import ArcoForm from './features/legal/ArcoForm';
 import Checkout from './features/operations/Checkout';
 import EntregaOTP from './features/operations/EntregaOTP';
 import Operations from './features/operations/Operations';
+import Conversations from './features/operations/Conversations';
+import ChatWorkspace from './features/operations/ChatWorkspace';
 
 // Paneles (Dashboards)
 import AdminDashboard from './features/dashboard/AdminDashboard';
@@ -28,6 +31,8 @@ import UserProfile from './features/dashboard/UserProfile'; // <- IMPORTACIÓN N
 function App() {
   return (
     <Router>
+      <AppToast>
+      <ChatWorkspace>
       <Layout>
         <Routes>
           <Route path="/" element={<Home />} />
@@ -38,6 +43,8 @@ function App() {
           <Route path="/mis-publicaciones" element={<RequireSession><ManagePublications /></RequireSession>} />
           <Route path="/publicar" element={<RequireSession><CreatePublication /></RequireSession>} />
           <Route path="/operaciones" element={<RequireSession><Operations /></RequireSession>} />
+          <Route path="/mensajes" element={<RequireSession><Conversations /></RequireSession>} />
+          <Route path="/mensajes/:id" element={<RequireSession><Conversations /></RequireSession>} />
           
           <Route path="/checkout/:id" element={<RequireSession><Checkout /></RequireSession>} />
           <Route path="/entrega/:id" element={<RequireSession><EntregaOTP /></RequireSession>} />
@@ -53,6 +60,8 @@ function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Layout>
+      </ChatWorkspace>
+      </AppToast>
     </Router>
   );
 }

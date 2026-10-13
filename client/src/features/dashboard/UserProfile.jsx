@@ -1,78 +1,129 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { apiRequest } from '../../lib/api';
-import { getSession } from '../../lib/auth';
-
-const statusLabel = { pending: 'Pendiente', approved: 'Aprobada', rejected: 'Rechazada' };
-const metadataFields = [['documentType', 'Tipo de documento', 100], ['institution', 'Institución', 200], ['academicPeriod', 'Periodo académico', 100], ['note', 'Nota', 500]];
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { apiAssetUrl, apiRequest } from '../../lib/api';
+import { getSession, updateSessionProfile } from '../../lib/auth';
+import AcademicCombobox from './AcademicCombobox';
+import { preparePhoto } from '../../lib/prepare-photo';
+import { useToast } from '../../lib/toast-context';
 
 export default function UserProfile() {
+  const navigate = useNavigate();
+  const { showSuccessToast } = useToast();
   const token = getSession()?.token;
   const [profile, setProfile] = useState(null);
-  const [history, setHistory] = useState([]);
+  const [catalog, setCatalog] = useState([]);
+  const [faculty, setFaculty] = useState('');
+  const [career, setCareer] = useState('');
+  const [facultySearch, setFacultySearch] = useState('');
+  const [careerSearch, setCareerSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const errorRef = useRef(null);
+
+  useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
+
   useEffect(() => {
     if (!token) return;
     let current = true;
-    Promise.all([apiRequest('/users/me', { token }), apiRequest('/users/me/role-requests', { token })])
-      .then(([data, requests]) => { if (current) { setProfile(data); setHistory(requests); } })
+    Promise.all([
+      apiRequest('/users/me', { token }),
+      apiRequest('/users/academic-catalog', { token }),
+    ])
+      .then(([data, options]) => {
+        if (!current) return;
+        const entries = Array.isArray(options) ? options : [];
+        const entry = entries.find(item => item.faculty === data.faculty);
+        setCatalog(entries);
+        setFaculty(entry?.faculty || '');
+        setCareer(entry?.careers.includes(data.career) ? data.career : '');
+        setFacultySearch(entry?.faculty || '');
+        setCareerSearch(entry?.careers.includes(data.career) ? data.career : '');
+        setProfile(data);
+      })
       .catch(failure => { if (current) setError(failure.message); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
   }, [token, revision]);
-  function retry() { setError(''); setNotice(''); setProfile(null); setLoading(true); setRevision(value => value + 1); }
-  async function save(event) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    setBusy(true); setError(''); setNotice('');
-    try {
-      const updated = await apiRequest('/users/me', { 
-        token, 
-        method: 'PATCH', 
-        body: JSON.stringify({ 
-          display_name: data.get('display_name').trim(), 
-          contact_number: data.get('contact_number') ? data.get('contact_number').trim() : null, // <-- Nuevo campo extraído
-          avatar_url: data.get('avatar_url').trim() || null, 
-          faculty: data.get('faculty').trim() || null 
-        }) 
-      });
-      setProfile(updated.user || updated); // Adaptado por si tu backend devuelve { success: true, user: {...} } o directo el objeto
-      setNotice('Perfil guardado.');
-    } catch (failure) { 
-      setError(failure.message); 
-    } finally { 
-      setBusy(false); 
-    }
+
+  function retry() {
+    setError(''); setNotice(''); setProfile(null); setLoading(true);
+    setRevision(value => value + 1);
   }
-  async function requestRole(event) {
+
+  function explainInvalidField(event) {
+    setNotice('');
+    setError(['faculty', 'career'].includes(event.target.id)
+      ? 'Para guardar, selecciona una facultad y una carrera de la lista. Escribir para buscar no basta: escoge una opción.'
+      : 'Completa el nombre visible para guardar tu perfil.');
+  }
+
+  async function save(event) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
-    const evidence = data.get('evidence_ref').trim();
-    if (!/^https:\/\//.test(evidence)) return setError('La evidencia requiere una referencia HTTPS.');
-    const metadata = Object.fromEntries(metadataFields.map(([key]) => [key, data.get(key).trim()]).filter(([, value]) => value));
+    if (!data.get('display_name').trim()) {
+      setError('Completa el nombre visible para guardar tu perfil.');
+      return;
+    }
+    const photo = form.elements.namedItem('photo')?.files?.[0];
+    const hasPhoto = !!photo;
+    if ((['Estudiante', 'Egresado'].includes(profile.role) || faculty || career) &&
+        !catalog.some(entry => entry.faculty === faculty && entry.careers.includes(career))) {
+      setError('Escoge una facultad y una carrera válida de la UCSM.');
+      return;
+    }
     setBusy(true); setError(''); setNotice('');
+    let detailsSaved = false;
     try {
-      const result = await apiRequest('/users/me/role-requests', { token, method: 'POST', body: JSON.stringify({ evidence_ref: evidence, evidence_metadata: metadata }) });
-      setHistory(previous => [result, ...previous]); setNotice('Solicitud enviada para revisión.'); form.reset();
-    } catch (failure) { setError(failure.message); }
-    finally { setBusy(false); }
+      if (hasPhoto) setNotice('Preparando foto para subirla con un máximo de 2 MB…');
+      const preparedPhoto = hasPhoto ? await preparePhoto(photo) : null;
+      const updated = await apiRequest('/users/me', {
+        token, method: 'PATCH',
+        body: JSON.stringify({
+          display_name: data.get('display_name').trim(),
+          contact_number: data.get('contact_number').trim() || null,
+          faculty: faculty || null,
+          career: career || null,
+        }),
+      });
+      detailsSaved = true;
+      setProfile(updated);
+      updateSessionProfile(updated, token);
+      const result = hasPhoto
+        ? await apiRequest('/users/me/photo', {
+            token, method: 'PUT', body: preparedPhoto, headers: { 'Content-Type': preparedPhoto.type },
+          })
+        : updated;
+      setProfile(result);
+      updateSessionProfile(result, token);
+      form.querySelector('input[name="photo"]').value = '';
+      showSuccessToast('Tu perfil se guardó correctamente.');
+      navigate('/', { replace: true });
+    } catch (failure) {
+      setNotice('');
+      setError(detailsSaved
+        ? `Los datos del perfil se guardaron, pero no se pudo subir la foto: ${failure.message}`
+        : failure.message);
+    } finally { setBusy(false); }
   }
+
   if (!token) return <p role="alert">Inicia sesión para ver tu perfil.</p>;
+  const selectedFaculty = catalog.find(entry => entry.faculty === faculty);
+  const academicRole = ['Estudiante', 'Egresado'].includes(profile?.role);
   return <div className="workflow max-w-3xl mx-auto">
     <h1>Mi perfil</h1>
     {loading && <p role="status">Cargando perfil…</p>}
-    {error && <p role="alert">{error}</p>}
+    {error && <p role="alert" ref={errorRef} tabIndex={-1}>{error}</p>}
     {notice && <p role="status">{notice}</p>}
     <button disabled={loading || busy} onClick={retry}>Reintentar</button>
     {profile && <>
+      {apiAssetUrl(profile.avatar_url) && <img src={apiAssetUrl(profile.avatar_url)} alt="Foto de perfil" className="h-28 w-28 rounded-full object-cover" />}
       <dl>
         <dt>Correo</dt><dd>{profile.email}</dd>
-        <dt>Número de contacto</dt><dd>{profile.contact_number || 'No registrado'}</dd> {/* <-- Dato visible */}
+        <dt>Número de contacto</dt><dd>{profile.contact_number || 'No registrado'}</dd>
         <dt>Condición académica</dt><dd>{profile.academic_condition}</dd>
         <dt>Universidad</dt><dd>{profile.university}</dd>
         <dt>Estado de cuenta</dt><dd>Activa / Verificado (acceso confirmado por el servidor)</dd>
@@ -80,45 +131,35 @@ export default function UserProfile() {
         <dt>Operaciones</dt><dd>{profile.operations_count ?? 'Sin datos'}</dd>
         <dt>Cuenta creada</dt><dd>{profile.created_at ? new Date(profile.created_at).toLocaleString() : 'Sin datos'}</dd>
       </dl>
-      
-      {/* Se agregó contact_number a la key para forzar el re-renderizado al guardar */}
-      <form onSubmit={save} key={`${profile.display_name}-${profile.avatar_url}-${profile.faculty}-${profile.contact_number}`}>
+      <form onSubmit={save} onInvalidCapture={explainInvalidField}>
         <fieldset disabled={busy}>
           <label>Nombre visible
             <input name="display_name" defaultValue={profile.display_name || ''} maxLength={100} required />
           </label>
-          
-          {/* <-- Nuevo Input para el celular --> */}
-          <label>Número de celular (Opcional)
+          <label>Número de celular (opcional)
             <input name="contact_number" type="tel" defaultValue={profile.contact_number || ''} maxLength={20} />
           </label>
-
-          <label>Avatar (URL HTTPS)
-            <input name="avatar_url" type="url" pattern="https://.*" defaultValue={profile.avatar_url || ''} maxLength={2048} />
+          <label>Foto de perfil (se ajusta automáticamente a un máximo de 2 MB)
+            <input name="photo" type="file" accept="image/*" />
           </label>
-          <label>Facultad
-            <input name="faculty" defaultValue={profile.faculty || ''} maxLength={100} />
-          </label>
-          <p>Deja avatar o facultad vacíos para eliminarlos. Las métricas y la condición académica no se editan aquí.</p>
+          <p>Puedes elegir una foto grande. Ajustaremos su tamaño y calidad antes de subirla. Si tu navegador no reconoce el formato, usa JPEG, PNG o WebP.</p>
+          {profile.faculty && !catalog.some(entry => entry.faculty === profile.faculty && entry.careers.includes(profile.career)) &&
+            <p role="status">Tu facultad o carrera anterior no está en el catálogo; selecciona ambas para actualizar el perfil.</p>}
+          <AcademicCombobox id="faculty" label="Facultad" text={facultySearch} selected={faculty}
+            options={catalog.map(entry => entry.faculty)} required={academicRole || !!career}
+            onInput={text => { setFacultySearch(text); setFaculty(''); setCareer(''); setCareerSearch(''); }}
+            onSelect={value => { setFaculty(value); setFacultySearch(value); setCareer(''); setCareerSearch(''); }}
+            onDismiss={() => setFacultySearch(faculty)} />
+          <AcademicCombobox id="career" label="Carrera" text={careerSearch} selected={career}
+            options={selectedFaculty?.careers || []} required={academicRole || !!faculty} disabled={!faculty}
+            onInput={text => { setCareerSearch(text); setCareer(''); }}
+            onSelect={value => { setCareer(value); setCareerSearch(value); }}
+            onDismiss={() => setCareerSearch(career)} />
+          <p>La condición académica se determina por tu correo institucional; no se edita aquí.</p>
+          {academicRole && <p>Para guardar el perfil, selecciona tu facultad y carrera en las opciones de búsqueda.</p>}
           <button>{busy ? 'Guardando…' : 'Guardar perfil'}</button>
         </fieldset>
       </form>
-      <h2>Solicitudes de rol Estudiante</h2>
-      {!history.length && <p>No tienes solicitudes registradas.</p>}
-      {history.map(request => <article key={request.id}>
-        <h3>{statusLabel[request.status] || request.status}</h3>
-        <p>{request.created_at ? new Date(request.created_at).toLocaleString() : ''}</p>
-        {request.review_reason && <p>{request.review_reason}</p>}
-      </article>)}
-      {profile.role === 'Egresado' && !history.some(request => request.status === 'pending') && <form onSubmit={requestRole}>
-        <p>Presenta una referencia auténtica de tu condición actual. Solo un administrador puede decidir la solicitud.</p>
-        <fieldset disabled={busy}>
-          <label>Referencia de evidencia (HTTPS)<input name="evidence_ref" type="url" pattern="https://.*" maxLength={2048} required /></label>
-          {metadataFields.map(([key, label, maxLength]) => <label key={key}>{label}<input name={key} maxLength={maxLength} /></label>)}
-          <button>Solicitar rol Estudiante</button>
-        </fieldset>
-      </form>}
-      {profile.role === 'Estudiante' && <p>Ya tienes el rol Estudiante; no necesitas solicitarlo de nuevo.</p>}
     </>}
     <Link to="/mis-publicaciones">Gestionar mis publicaciones</Link>
   </div>;

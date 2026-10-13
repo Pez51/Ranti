@@ -17,6 +17,48 @@ const page = (items, offset = 0) => ({ items, limit: 20, offset });
 function setup() { render(<MemoryRouter><Operations /></MemoryRouter>); }
 beforeEach(() => { vi.resetAllMocks(); session(); });
 
+it.each([['Aceptar','accept'],['Rechazar','reject'],['Cancelar','cancel']])('renders %s confirmation beneath the selected request, not after the list',async(label,action)=>{
+  const items=['Primera','Segunda','Tercera'].map((title,index)=>({...base,id:`op-${index}`,publication:{...base.publication,title},allowed_actions:[action]}));
+  apiRequest.mockResolvedValueOnce(page(items));setup();
+  const selected=await screen.findByRole('article',{name:'Operación de Segunda'});
+  fireEvent.click(within(selected).getByRole('button',{name:label}));
+  const dialog=screen.getByRole('dialog',{name:`Confirmar ${label.toLowerCase()}`});
+  expect(selected).toContainElement(dialog);
+  expect(screen.getByRole('article',{name:'Operación de Primera'})).not.toContainElement(dialog);
+  const next=screen.getByRole('article',{name:'Operación de Tercera'});
+  expect(dialog.compareDocumentPosition(next)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button',{name:'Volver'}));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('shows the offered and published prices and asks the owner to confirm the offered amount',async()=>{
+  const item={...base,offered_price:'100.00',allowed_actions:['accept','reject'],offer_pricing:{service_fee:'5.00',service_fee_percent:5,owner_net:'95.00'}};
+  apiRequest.mockResolvedValueOnce(page([])).mockResolvedValueOnce(page([item]));
+  setup();fireEvent.click(screen.getByRole('button',{name:'Recibidas'}));
+  await screen.findByText('Oferta de precio: S/ 100.00');
+  expect(screen.getByText(/Precio publicado al solicitar: S\/ 125.00/)).toBeInTheDocument();
+  expect(screen.getByText(/Neto estimado para ti: S\/ 95.00/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Aceptar oferta'}));
+  expect(screen.getByRole('dialog')).toHaveTextContent(/Oferta: S\/ 100.00/);
+  expect(screen.getByRole('dialog')).toHaveTextContent(/Aceptar fija la oferta como precio acordado/);
+});
+
+it('clearly distinguishes outgoing and incoming requests and counterpart roles', async () => {
+  apiRequest.mockResolvedValueOnce(page([base])).mockResolvedValueOnce(page([{ ...base, allowed_actions: ['accept', 'reject'] }]));
+  setup();
+  expect(await screen.findByText('Enviada por ti')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Enviadas' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('heading', { name: 'Solicitudes enviadas' })).toBeInTheDocument();
+  expect(screen.getByText('Oferente del artículo: Oferente')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Recibidas' }));
+  expect(await screen.findByText('Recibida · Tu artículo')).toBeInTheDocument();
+  expect(screen.queryByText('Enviada por ti')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Recibidas' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'Enviadas' })).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.getByRole('heading', { name: 'Solicitudes recibidas' })).toBeInTheDocument();
+  expect(screen.getByText('Solicitante: Oferente')).toBeInTheDocument();
+});
+
 it('shows outgoing loading, pending terms and expiry, then received empty state', async () => {
   let resolve;
   apiRequest.mockReturnValueOnce(new Promise(done => { resolve = done; })).mockResolvedValueOnce(page([]));
@@ -46,7 +88,7 @@ it('accepts only after confirmation and displays the server refreshed state', as
   expect(await screen.findByText('Aceptada')).toBeInTheDocument();
   expect(apiRequest.mock.calls[2]).toEqual(['/operations/op-1/accept', expect.objectContaining({ token: 'real-token', method: 'POST' })]);
   expect(apiRequest.mock.calls[3][0]).toBe('/operations/mine?side=received&limit=20&offset=0');
-  expect(within(screen.getByRole('article', { name: /Calculadora/ })).getByText(/Pagos, garantías y entrega aún no disponibles/)).toBeInTheDocument();
+  expect(within(screen.getByRole('article', { name: /Calculadora/ })).getByText(/Reservado · Pendiente de entrega/)).toBeInTheDocument();
 });
 
 it.each([['Rechazar', 'reject', 'Recibidas', ['accept', 'reject']], ['Cancelar', 'cancel', 'Enviadas', ['cancel']]])('requires a normalized reason before %s and refreshes the list', async (label, action, tab, allowed) => {

@@ -16,3 +16,184 @@
 .workflow dt { font-weight: 700; }
 .workflow dd { overflow-wrap: anywhere; }
 .workflow [role=dialog] { background: #fff9db; border: 2px solid #655000; padding: 1rem; margin-block: 1rem; border-radius: .7rem; }
+.workflow input.photo-file-input { display: none; }
+.workflow .publication-photos { background: #f8fbf9; border: 1px solid #d7e5dc; border-radius: 1rem; padding: 1rem; }
+.publication-photos h3 span, .workflow .photo-camera-help { color: #4b6354; font-size: .85rem; }
+.photo-upload-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+.workflow .photo-upload-actions button { display: inline-flex; align-items: center; gap: .5rem; margin: 0; }
+.publication-photo-grid { display: flex; gap: .65rem; margin: 1rem 0; padding: .2rem .2rem .5rem; list-style: none; overflow-x: auto; }
+.publication-photo-grid li { position: relative; flex: 0 0 calc((100% - 1.95rem) / 4); min-width: 4.75rem; aspect-ratio: 1; border-radius: .75rem; }
+.workflow .publication-photo-grid .photo-drag, .workflow .publication-photo-grid .photo-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .45rem; width: 100%; height: 100%; margin: 0; padding: 0; border-radius: .75rem; overflow: hidden; }
+.workflow .publication-photo-grid .photo-drag { border: 1px solid #b4cbbc; background: #e8f0eb; cursor: grab; touch-action: none; user-select: none; }
+.workflow .publication-photo-grid .photo-drag:active { cursor: grabbing; }
+.publication-photo-grid img { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.photo-cover-label { position: absolute; left: .35rem; bottom: .35rem; padding: .2rem .4rem; border-radius: .4rem; background: #062912e8; color: white; font-size: .7rem; pointer-events: none; }
+.photo-drag-hint { position: absolute; left: .4rem; top: .4rem; display: flex; padding: .15rem; color: white; background: #06291299; border-radius: .3rem; pointer-events: none; }
+.workflow .photo-remove { position: absolute; top: .3rem; right: .3rem; display: flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; margin: 0; padding: 0; border: 1px solid #b4cbbc; background: white; border-radius: 50%; box-shadow: 0 1px 4px #06291233; }
+.workflow .publication-photo-grid .photo-add { border: 2px dashed #8fb89d; color: #21643c; background: #eef8f1; font-size: .8rem; }
+.workflow .publication-photo-grid .photo-add:hover { background: #def5e6; }
+.photo-empty-slot { display: flex; align-items: center; justify-content: center; background: #edf2ef; border: 1px dashed #cbd9d0; }
+.photo-slot-number { font-weight: 700; color: #98ac9f; }
+.publication-photo-grid .photo-drop-target { outline: 3px solid #23924b; outline-offset: 1px; }
+.photo-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.workflow .photo-crop-dialog { position: fixed; inset: 0; width: min(30rem,calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; margin: auto; padding: 1.25rem; color: #062912; background: white; border: 2px solid #062912; border-radius: 1.25rem; box-shadow: 0 1rem 4rem #06291244; }
+.photo-crop-dialog::backdrop { background: #062912aa; }
+.workflow .photo-crop-dialog h2 { margin: 0 0 .6rem; }
+.photo-crop-stage { position: relative; width: min(100%,20rem); aspect-ratio: 1; margin: 1rem auto; overflow: hidden; border-radius: .75rem; background: #e8f0eb; touch-action: none; user-select: none; cursor: grab; }
+.photo-crop-stage:active { cursor: grabbing; }
+.photo-crop-stage img { position: absolute; display: block; max-width: none; object-fit: fill; pointer-events: none; }
+.photo-crop-grid { position: absolute; inset: 0; pointer-events: none; border: 2px solid #ffffffbb; border-radius: .75rem; background: linear-gradient(to right,transparent 33%,#ffffff55 33%,#ffffff55 33.5%,transparent 33.5%,transparent 66.5%,#ffffff55 66.5%,#ffffff55 67%,transparent 67%),linear-gradient(to bottom,transparent 33%,#ffffff55 33%,#ffffff55 33.5%,transparent 33.5%,transparent 66.5%,#ffffff55 66.5%,#ffffff55 67%,transparent 67%); }
+.workflow label.photo-crop-zoom { display: flex; gap: .6rem; align-items: center; }
+.workflow .photo-crop-zoom input[type=range] { flex: 1; width: auto; min-width: 0; padding: 0; border: none; accent-color: #176337; }
+.workflow .photo-crop-dialog button { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; margin: 0; }
+.photo-crop-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .6rem; margin-top: 1rem; }
+.workflow .photo-crop-dialog .photo-crop-confirm { background: #062912; color: white; }
+.workflow .description-count { font-size: .85rem; color: #4b6354; margin-top: -.35rem; }
+.workflow .description-count-error { color: #991b1b; }
+.workflow .physical-rating { padding: .75rem 1rem; margin: 1rem 0; border: 1px solid #b4cbbc; border-radius: .75rem; }
+.physical-rating legend { padding: 0 .35rem; font-weight: 700; }
+.physical-stars { display: flex; gap: .2rem; }
+.workflow .physical-stars button { margin: 0; padding: .3rem; background: transparent; border: none; color: #a66b00; }
+.workflow .physical-stars button:hover { background: #fff3cc; }
+.workflow .physical-rating p { font-size: .9rem; margin: .4rem 0 0; }
+.workflow .loan-community { padding: 1rem; background: #eaf7ee; border-left: 4px solid #338b50; border-radius: .5rem; }
+.workflow .publication-pricing { background: #f6fbf8; padding: 1.25rem; border: 2px solid #b4cbbc; border-radius: 1rem; }
+.publication-pricing .owner-net { font-weight: 800; color: #176337; font-size: 1.2rem; }
+.workflow .pricing-pilot-note { color: #665000; background: #fff9db; padding: .85rem; border-radius: .5rem; }
+.workflow .provenance-upload { background: #f6fbf8; border: 2px dashed #a8c9b4; border-radius: 1rem; }
+.provenance-actions,.provenance-attached { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; }
+.workflow .provenance-actions button,.workflow .provenance-attached button { display: inline-flex; align-items: center; gap: .4rem; margin: 0; }
+.provenance-attached { margin-top: 1rem; padding: .8rem; background: #e3f4e9; border-radius: .7rem; }
+.workflow .provenance-help { font-size: .85rem; color: #4b6354; }
+.publications-manager .publications-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 1rem; padding-bottom: 1.25rem; border-bottom: 1px solid #d7e5dc; }
+.publications-manager .publications-heading h1 { margin-bottom: .35rem; }
+.publications-manager .publications-heading p { margin: 0; color: #4b6354; max-width: 32rem; }
+.publications-toolbar { display: flex; flex-wrap: wrap; gap: .65rem; align-items: center; }
+.publications-manager .publication-create, .publications-toolbar button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.9rem; margin: 0; padding: .65rem 1rem; border: 2px solid #062912; border-radius: .7rem; font-weight: 700; line-height: 1.4; text-align: center; }
+.publications-manager .publication-create { background: #062912; color: white; text-decoration: none; }
+.publications-manager .publication-create:hover { background: #174c2b; }
+.publications-toolbar button:not(:disabled):hover { background: #c9edd5; }
+.publications-manager .publications-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 2.5rem 1.25rem; margin: 1.5rem 0 0; border: 2px dashed #b4cbbc; border-radius: 1rem; background: #f6fbf8; }
+.publications-empty-icon, .publication-card-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: #176337; background: #def5e6; border-radius: 1rem; }
+.publications-empty-icon { width: 4.5rem; height: 4.5rem; }
+.publications-manager .publications-empty h2 { margin: 1rem 0 .4rem; }
+.publications-manager .publications-empty p { max-width: 30rem; margin: 0 0 1.4rem; color: #4b6354; }
+.publications-list { display: grid; gap: 1rem; margin-top: 1.25rem; }
+.publications-list:empty { display: none; }
+.publications-manager .publication-card { min-width: 0; margin: 0; padding: 1.25rem; border: 1px solid #b4cbbc; border-radius: 1rem; }
+.publication-card-heading { display: flex; gap: .8rem; align-items: center; }
+.publication-card-icon { width: 2.75rem; height: 2.75rem; }
+.publication-card-photo { width: 4rem; height: 4rem; object-fit: cover; border-radius: .7rem; flex-shrink: 0; }
+.publications-manager .publication-card h2 { margin: 0; overflow-wrap: anywhere; }
+.publication-actions { display: flex; flex-wrap: wrap; gap: .6rem; padding-top: .8rem; margin-top: .8rem; border-top: 1px solid #d7e5dc; }
+.publications-manager .publication-actions button { margin: 0; }
+@media (max-width: 600px) {
+  .publications-manager { padding: 1.1rem; }
+  .publications-toolbar { width: 100%; }
+  .publications-toolbar > * { width: 100%; }
+  .publications-manager .publications-empty { padding: 2rem 1rem; }
+}
+.workflow .academic-combobox { position: relative; margin-block: .8rem; }
+.workflow .academic-combobox label { margin-bottom: .35rem; }
+.workflow .academic-options { position: absolute; z-index: 20; top: 100%; left: 0; right: 0; max-height: 16rem; overflow-y: auto; background: white; border: 2px solid #8a9b90; border-radius: .5rem; box-shadow: 0 .4rem 1rem #06291222; }
+.workflow .academic-option { display: block; width: 100%; margin: 0; padding: .65rem .8rem; text-align: left; border: 0; border-radius: 0; background: white; font-weight: 500; }
+.workflow .academic-option:hover, .workflow .academic-option[data-active=true] { background: #def5e6; }
+.workflow .academic-no-results { margin: 0; padding: .65rem .8rem; }
+.app-toast { position: fixed; z-index: 100; bottom: 1.5rem; right: 1.5rem; display: flex; align-items: center; gap: .85rem; width: min(26rem, calc(100vw - 2rem)); padding: 1rem; color: #062912; background: #e5faeb; border: 2px solid #126b36; border-radius: 1rem; box-shadow: 0 .5rem 1.5rem #06291233; }
+.app-toast > svg { flex-shrink: 0; color: #126b36; }
+.app-toast strong { display: block; font-size: 1.05rem; }
+.app-toast p { margin: .2rem 0 0; }
+.app-toast button { flex-shrink: 0; margin-left: auto; padding: .4rem; border-radius: .5rem; background: transparent; cursor: pointer; }
+.app-toast button:focus-visible { outline: 3px solid #126ea7; outline-offset: 2px; }
+@media (max-width: 600px) { .app-toast { bottom: 1rem; right: 1rem; } }
+.account-menu { position: relative; flex-shrink: 0; }
+.account-avatar { width: 2.75rem; height: 2.75rem; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 4px solid #062912; border-radius: 50%; background: #fbcfe8; color: #062912; box-shadow: 3px 3px 0 #062912; cursor: pointer; }
+.account-avatar:focus-visible, .account-options :focus-visible { outline: 3px solid #126ea7; outline-offset: 3px; }
+.account-options { position: absolute; top: calc(100% + .7rem); z-index: 60; width: min(16rem, calc(100vw - 2rem)); padding: .45rem; background: white; color: #062912; border: 3px solid #062912; border-radius: 1rem; box-shadow: 4px 4px 0 #062912; }
+.account-options-right { right: 0; }
+.account-options-left { left: 0; }
+.account-options-name { padding: .6rem .7rem; font-weight: 800; overflow-wrap: anywhere; border-bottom: 1px solid #d7e5dc; }
+.account-options [role=menuitem] { display: block; width: 100%; padding: .7rem; border-radius: .5rem; text-align: left; font-weight: 600; background: white; color: #062912; text-decoration: none; cursor: pointer; }
+.account-options [role=menuitem]:hover, .account-options [role=menuitem]:focus { background: #def5e6; }
+.operations-view-switch { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1rem 0; }
+.workflow .operations-view-switch button { display: inline-flex; align-items: center; gap: .4rem; margin: 0; border: 2px solid #9bb5a5; }
+.workflow .operations-view-switch button[aria-pressed="true"] { color: white; background: #092d18; border-color: #092d18; box-shadow: 0 3px 0 #22c55e; font-weight: 800; }
+.operations-view-context { padding: .8rem 1rem; background: #f1f7f3; border-left: 4px solid #176337; border-radius: .5rem; }
+.workflow .operations-view-context h2 { margin: 0; font-size: 1.1rem; }
+.workflow .operations-view-context p { margin: .3rem 0 0; color: #405e4b; }
+.workflow .operation-direction { display: inline-flex; align-items: center; gap: .35rem; padding: .35rem .65rem; border-radius: 999px; border: 1px solid #a3c2e5; background: #eff6ff; color: #1e4575; font-size: .8rem; font-weight: 800; }
+.workflow .operation-direction.is-received { border-color: #83b996; background: #e4f7ea; color: #12532c; }
+.product-offer { margin-top: 1rem; }
+.product-offer-toggle { width: 100%; padding: .8rem; border: 2px solid #092d18; border-radius: .8rem; background: white; color: #092d18; font-weight: 800; }
+.product-offer-form, .operation-offer-summary { margin-top: .8rem; padding: .85rem; border: 1px solid #a0c3ad; border-radius: .8rem; background: #eef9f2; }
+.product-offer-form label { display: block; font-weight: 700; margin-bottom: .4rem; }
+.product-offer-form input { width: 100%; padding: .65rem; border: 1px solid #8a9b90; border-radius: .5rem; background: white; }
+.product-offer-form p, .workflow .operation-offer-summary p { margin: .6rem 0; font-size: .85rem; }
+.product-offer-form button { padding: .6rem .8rem; border: 2px solid #092d18; border-radius: .6rem; background: #092d18; color: white; font-weight: 700; }
+.product-offer-amount { padding: .75rem; border-radius: .6rem; background: #e0f3e6; font-weight: 800; }
+.availability-badge { display: inline-block; padding: .4rem .65rem; border: 1px solid #a2bdac; border-radius: .6rem; background: #edf7f0; color: #164c2c; font-weight: 750; font-size: .85rem; }
+.availability-sold, .availability-rented, .availability-loaned { background: #fff3d1; color: #674300; border-color: #d4b764; }
+.availability-reserved, .availability-future-reservations { background: #e8f1ff; color: #254d7d; border-color: #a3bad8; }
+.product-availability { margin: 1rem 0; font-size: .85rem; }
+.workflow .handoff-panel { background: #f6faf7; border: 2px solid #a6c9b2; margin-top: 1rem; padding: 1rem; }
+.handoff-panel h3 { font-weight: 800; margin: 0 0 .6rem; }
+.handoff-panel p { font-size: .85rem; }
+.handoff-state { padding: .6rem; background: #e1f1e7; border-radius: .5rem; font-weight: 700; }
+.open-chat { margin: .8rem 0; }
+.open-chat button { padding: .6rem .9rem; border: 2px solid #092d18; border-radius: .7rem; background: #e3f6e9; font-weight: 700; }
+.chat-messages { list-style: none; display: flex; flex-direction: column; gap: .7rem; padding: 1rem 0; max-height: 65vh; overflow: auto; }
+.chat-message { align-self: flex-start; max-width: 90%; border: 1px solid #b5c6bb; border-radius: 1rem 1rem 1rem .2rem; padding: .75rem 1rem; background: white; overflow-wrap: anywhere; }
+.chat-message.mine { align-self: flex-end; background: #e0f4e7; border-radius: 1rem 1rem .2rem 1rem; }
+.chat-message p { margin: .3rem 0; white-space: pre-wrap; }
+.chat-message time { font-size: .72rem; color: #4f6859; }
+.workflow .deal-calendar { background: #f6faf7; border: 2px solid #a8c9b4; }
+.calendar-days { display: flex; gap: .4rem; overflow-x: auto; margin: .8rem 0; }
+.workflow .calendar-days button { flex-shrink: 0; margin: 0; }
+.workflow .calendar-days button[aria-pressed=true] { color: white; background: #092d18; }
+.calendar-slots { display: grid; grid-template-columns: repeat(auto-fit,minmax(8rem,1fr)); gap: .4rem; max-height: 18rem; overflow-y: auto; padding: .5rem; background: white; border: 1px solid #b6cabc; border-radius: .6rem; }
+.workflow .calendar-slots label { display: flex; gap: .3rem; align-items: center; padding: .4rem; margin: 0; font-size: .85rem; border: 1px solid #d4e3d9; border-radius: .4rem; cursor: pointer; }
+.workflow .calendar-slots input { width: auto; margin: 0; accent-color: #176337; }
+.calendar-recommendations h3 { font-weight: 800; margin-top: 1rem; }
+.payment-pilot { padding: .8rem; background: #fff8d9; border: 1px solid #d8c379; border-radius: .6rem; }
+.calendar-range { margin: .8rem 0; padding: 1rem; border: 1px solid #b6cabc; border-radius: .7rem; background: #eff8f2; }
+.calendar-range legend { font-weight: 700; padding: 0 .3rem; }
+.calendar-range-fields { display: flex; flex-wrap: wrap; align-items: end; gap: .6rem; }
+.workflow .calendar-range-fields label { flex: 1 1 8rem; margin: 0; }
+.workflow .calendar-range-fields button { margin: 0; }
+.workflow .calendar-step { margin-top: 1.25rem; padding: clamp(12px, 2vw, 20px); background: white; border: 1px solid #c5dacf; border-radius: 14px; }
+.calendar-step-heading { display: flex; flex-wrap: wrap; align-items: start; gap: .75rem; margin-bottom: 1rem; }
+.calendar-step-heading > span { display: grid; place-items: center; width: 2rem; height: 2rem; flex-shrink: 0; background: #103c24; color: white; font-weight: 800; border-radius: 50%; }
+.calendar-step-heading > div { flex: 1 1 180px; }
+.workflow .calendar-step-heading h3 { margin: 0; font-size: 1.1rem; font-weight: 800; }
+.workflow .calendar-step-heading p { margin: .25rem 0 0; font-size: .85rem; color: #4b6656; }
+.workflow .calendar-step-heading button { margin: 0; font-size: .8rem; }
+.calendar-save-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem; margin-top: 1rem; background: #edf7f0; border-radius: 10px; }
+.workflow .calendar-save-bar p { margin: 0; }
+.calendar-save-bar span { display: block; font-size: .85rem; margin-top: .2rem; }
+.workflow button.calendar-primary { background: #103c24; color: white; margin: 0; }
+.calendar-skip { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-top: .75rem; font-size: .85rem; color: #4b6656; }
+.workflow .calendar-skip button { margin: 0; background: white; font-size: .8rem; }
+.calendar-place { display: flex; flex-direction: column; gap: .25rem; padding: .8rem 1rem; background: #f0f6fb; border-radius: 10px; }
+.calendar-place small { color: #4b6656; }
+.workflow .calendar-recommendation-day { margin: 1rem 0 0; padding: 0; border: 0; }
+.calendar-recommendation-day h4 { text-transform: capitalize; font-weight: 700; margin: 0 0 .6rem; }
+.calendar-recommendation-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,190px),1fr)); gap: .75rem; }
+.workflow .calendar-time-card { display: flex; flex-direction: column; gap: .3rem; margin: 0; padding: 1rem; border: 1px solid #bad1c2; border-radius: 10px; background: #fbfdfb; }
+.calendar-time-card > strong { font-size: 1.1rem; }
+.calendar-time-card > span { font-size: .75rem; color: #4b6656; }
+.workflow .calendar-time-card button { margin: .6rem 0 0; width: 100%; font-size: .85rem; }
+.calendar-empty { padding: 1rem; border-radius: 10px; background: #f4f7f5; color: #4b6656; }
+.workflow .calendar-meeting .handoff-panel { border: 0; background: transparent; margin: 0; padding: 0; }
+.admin-chats > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .8rem; }
+.admin-chat-layout { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(0, 2fr); gap: 1rem; margin-top: 1rem; }
+.admin-chat-layout > aside { max-height: 65vh; overflow: auto; }
+.workflow .admin-chat-select { display: flex; flex-direction: column; gap: .25rem; width: 100%; margin: 0 0 .6rem; text-align: left; background: white; }
+.workflow .admin-chat-select span { font-size: .8rem; font-weight: 400; }
+.workflow .admin-chat-select[aria-pressed=true] { background: #e0f4e7; border-color: #176337; }
+.admin-chat-history { padding: 1rem; min-width: 0; border: 1px solid #bed0c4; border-radius: 12px; }
+.admin-chat-history ol { list-style: none; max-height: 60vh; overflow: auto; padding: 0; }
+.admin-chat-history li { padding: .75rem; margin-top: .6rem; background: #f5f8f6; border-radius: 8px; overflow-wrap: anywhere; }
+.admin-chat-history li p { white-space: pre-wrap; }
+.admin-chat-history li time { font-size: .75rem; color: #526c5c; }
+.admin-chat-history .admin-chat-event { background: #edf2fa; }
+@media (max-width: 700px) { .admin-chat-layout { grid-template-columns: 1fr; } .admin-chat-layout > aside { max-height: 35vh; } }

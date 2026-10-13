@@ -2,17 +2,19 @@
 
 Actualizado el 2026-10-02 sobre la verificación de Fase 3. Esta matriz sustituye afirmaciones históricas del diagnóstico inicial, conservado en Git. Código/pruebas prevalecen sobre Graphify desactualizado. [Comandos y operación](../README.md); [BPMN y ledger](bpmn/README.md).
 
+Actualización puntual 2026-10-12: para cuentas nuevas, `@estudiante.ucsm.edu.pe` asigna Estudiante y `@ucsm.edu.pe` asigna Egresado desde el servidor; ambos requieren confirmar el código, sin revisión administrativa. Dominios adicionales no se admiten. En RF-03, la URL de avatar se sustituyó por carga de foto JPEG/PNG/WebP (máximo 2 MB) y la facultad libre por la elección de facultad y carrera del catálogo UCSM. Las rutas heredadas de solicitud de rol permanecen en el repositorio, pero no forman parte del nuevo flujo.
+
 ## Alcance implementado
 
-“Implementado en simulación” no acredita identidad real ante UCSM ni completa todo el informe. Registro institucional para estudiantes/egresados, sin DNI, sin SSO real y sin envío de correo. Rol inicial Egresado; Estudiante por revisión manual. Evidencia como referencia HTTPS opaca, sin carga binaria ni almacén privado.
+“Implementado en simulación” no acredita identidad real ante UCSM ni completa todo el informe. Registro institucional para estudiantes/egresados, sin DNI, sin SSO real y sin envío de correo. El rol se deriva del dominio institucional y se habilita al confirmar el código simulado.
 
 | RF | Estado | Evidencia y límite |
 |---|---|---|
-| RF-01 Registro estudiante | Implementado en simulación | `identity.service.js::registerPendingAccount/verifyPendingAccount`, `Register.jsx`: consentimiento, dominio, cuenta pendiente; Estudiante solo tras revisión. |
-| RF-02 Acceso egresado | Implementado en simulación | `auth.controller.js::login`, `identity-provider.js`: Egresado por defecto con correo institucional, sin alternativa por correo personal. |
-| RF-03 Perfil | Implementado en alcance Fase 2 | `profile.service.js`, `UserProfile.jsx`: nombre, avatar HTTPS, facultad; universidad fija y métricas protegidas. |
+| RF-01 Registro estudiante | Implementado en simulación | `identity.service.js::registerPendingAccount/verifyPendingAccount`, `Register.jsx`: consentimiento, `@estudiante.ucsm.edu.pe`, cuenta pendiente y activación por código. |
+| RF-02 Acceso egresado | Implementado en simulación | `auth.controller.js::login`, `identity-provider.js`: Egresado con `@ucsm.edu.pe`, sin alternativa por correo personal. |
+| RF-03 Perfil | Implementado en alcance Fase 2 | `profile.service.js`, `UserProfile.jsx`: nombre, foto local, facultad y carrera seleccionadas de catálogo UCSM validado por API; universidad fija y métricas protegidas. |
 | RF-04 Identidad | Implementado en simulación | `identity.service.js`, `simulated-identity-provider.js`: hash, expiración, cinco intentos, consumo único, rollback; sin proveedor real. |
-| RF-05 Condición académica | Implementado en alcance Fase 2 | `role-review.service.js`, `publicProfile`: derivada del rol vigente, evidencia privada, cola auditada, aprobación/rechazo y concurrencia. |
+| RF-05 Condición académica | Implementado en simulación | `identity.service.js`, `publicProfile`: derivada del dominio al registrar y del rol vigente al consultar; sin revisión manual activa ni SSO UCSM. |
 | RF-06 Publicar bien | Implementado en alcance Fase 2 | `createPublication/submitPublication`, `CreatePublication.jsx`: Borrador, validación y envío antes de visibilidad. |
 | RF-07 Modalidad/disponibilidad | Implementado en alcance Fases 2–3 | `risk.policy.js`, `operation.policy.js`: Venta/Alquiler/Préstamo, economía, fechas e intervalos semiabiertos; entrega pendiente. |
 | RF-08 Riesgo | Implementado en alcance Fase 2 | `evaluatePublicationRisk/stage/decidePublicationReview`: pilot-v1, exposición máxima precio/garantía, S/500 revisión y S/1000 procedencia. |
@@ -76,3 +78,5 @@ Sin mediciones de piloto, SUS ni aceptación RNF inventada.
 | RNF-10 Recuperación | Sin respaldo/restauración de aceptación demostrados. |
 
 Resultados frescos en README; no se reutilizan conteos históricos. Plan/especificación y grafo obsoleto permanecen sin modificar.
+
+El flujo de publicación ahora incorpora descripción de hasta 1000 caracteres (no palabras), categorías con detalle para «Otros», autoevaluación física de 1–5 estrellas y un segundo paso de resumen económico privado. La tarifa total del oferente es 10% por debajo de S/60 y 5% desde S/60, con impuesto del servicio incluido internamente, según las aclaraciones del titular; sustituye el supuesto de 5% neto más IGV del informe para esta vista del piloto. [Política y evidencia](publication-pricing-policy.md). Este avance no implementa procesamiento de tarjetas, facturación comercial, custodia de garantías ni liquidación real; RF-13 y la economía productiva siguen pendientes.

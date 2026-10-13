@@ -14,6 +14,17 @@ it('rejects non-UCSM email and requires explicit terms before registration', asy
   expect(await screen.findByRole('alert')).toHaveTextContent(/UCSM/i); expect(apiRequest).not.toHaveBeenCalled();
   change(/Correo institucional/i, 'ana@ucsm.edu.pe'); click('Crear cuenta'); expect(screen.getByRole('alert')).toHaveTextContent(/términos/i);
 });
+it('accepts the exact student domain but rejects other UCSM subdomains', async () => {
+  apiRequest.mockResolvedValue(pending);
+  setup(); fireEvent.click(screen.getByLabelText(/Acepto los términos/));
+  change(/Correo institucional/i, 'ana@facultad.ucsm.edu.pe'); click('Crear cuenta');
+  expect(await screen.findByRole('alert')).toHaveTextContent(/@estudiante.ucsm.edu.pe/);
+  expect(apiRequest).not.toHaveBeenCalled();
+  change(/Correo institucional/i, 'ana@estudiante.ucsm.edu.pe'); click('Crear cuenta');
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/auth/register', expect.objectContaining({
+    body: JSON.stringify({ email: 'ana@estudiante.ucsm.edu.pe', password: 'securepass', acceptTerms: true, termsVersion: 'pilot-v1' }),
+  })));
+});
 it('normalizes registration, shows pilot code and only saves session after confirmation', async () => {
   apiRequest.mockResolvedValueOnce(pending).mockResolvedValueOnce({ token: 'confirmed-token', user });
   setup(); fireEvent.click(screen.getByLabelText(/Acepto los términos/)); click('Crear cuenta');

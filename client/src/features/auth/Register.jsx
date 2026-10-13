@@ -15,7 +15,7 @@ export default function Register() {
   async function request(action) {
     const address = email.trim().toLowerCase();
     setError('');
-    if (!/^[^\s@]+@(?:[a-z0-9-]+\.)*ucsm\.edu\.pe$/.test(address)) return setError('Usa un correo institucional UCSM válido.');
+    if (!/^[^\s@]+@(?:estudiante\.)?ucsm\.edu\.pe$/.test(address)) return setError('Usa un correo @ucsm.edu.pe o @estudiante.ucsm.edu.pe.');
     if (action === 'register' && !accepted) return setError('Debes aceptar explícitamente los términos.');
     if (action === 'register' && (password.length < 8 || password.length > 72 || new TextEncoder().encode(password).length > 72)) return setError('La contraseña requiere entre 8 caracteres y 72 bytes.');
     if (action === 'confirm' && !/^\d{6}$/.test(code)) return setError('Ingresa los seis dígitos del código.');
@@ -34,7 +34,7 @@ export default function Register() {
   }
   return <section className="workflow max-w-xl mx-auto">
     <h1>Crear cuenta UCSM</h1>
-    <p>La cuenta permanece pendiente hasta confirmar la verificación institucional.</p>
+    <p>El correo @ucsm.edu.pe corresponde a Egresado y @estudiante.ucsm.edu.pe a Estudiante. La cuenta permanece pendiente hasta confirmar el código.</p>
     <form noValidate onSubmit={event => { event.preventDefault(); request('register'); }}>
       <fieldset disabled={Boolean(busy)}>
         <label>Correo institucional<input type="email" autoComplete="email" value={email} disabled={Boolean(pending)} onChange={e => setEmail(e.target.value)} /></label>

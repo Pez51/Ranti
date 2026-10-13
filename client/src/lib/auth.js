@@ -20,6 +20,18 @@ export function saveSession(session, remember) {
   window.dispatchEvent(new Event('ranti-auth-changed'));
 }
 
+export function updateSessionProfile(profile, token) {
+  const session = getSession();
+  if (!session || session.token !== token || profile?.id !== session.user.id) return;
+  const user = { ...session.user };
+  for (const field of ['display_name', 'avatar_url']) {
+    if (Object.hasOwn(profile, field)) user[field] = profile[field];
+  }
+  const storage = localStorage.getItem(SESSION_KEY) ? localStorage : sessionStorage;
+  storage.setItem(SESSION_KEY, JSON.stringify({ ...session, user }));
+  window.dispatchEvent(new Event('ranti-auth-changed'));
+}
+
 export function clearSession(notify = true) {
   localStorage.removeItem(SESSION_KEY);
   sessionStorage.removeItem(SESSION_KEY);

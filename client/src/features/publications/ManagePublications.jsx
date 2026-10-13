@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { apiRequest } from '../../lib/api';
+import { PackageOpen, Plus, RefreshCw } from 'lucide-react';
+import { apiRequest, publicationImageUrl } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import PublicationForm from './PublicationForm';
 import PublicationStatus from './PublicationStatus';
@@ -53,26 +54,37 @@ export default function ManagePublications() {
     } finally { setBusy(false); }
   }
   if (!token) return <p role="alert">Inicia sesión para gestionar tus publicaciones.</p>;
-  return <div className="workflow max-w-4xl mx-auto">
-    <h1>Mis publicaciones</h1><Link to="/publicar">Crear publicación</Link>
-    <button disabled={loading || busy || Boolean(confirmation)} onClick={refresh}>Actualizar publicaciones</button>
+  return <div className="workflow publications-manager max-w-4xl mx-auto">
+    <header className="publications-heading">
+      <div><h1>Mis publicaciones</h1><p>Gestiona tus artículos, edita sus detalles y consulta su estado.</p></div>
+      <div className="publications-toolbar">
+        <Link className="publication-create" to="/publicar"><Plus size={18} aria-hidden="true" />Crear publicación</Link>
+        <button disabled={loading || busy || Boolean(confirmation)} onClick={refresh}><RefreshCw size={18} aria-hidden="true" />Actualizar publicaciones</button>
+      </div>
+    </header>
     {loading && <p role="status">Cargando publicaciones…</p>}
     {error && <p role="alert">{error}</p>}
-    {items?.length === 0 && <p>Todavía no tienes publicaciones.</p>}
-    {items?.map(item => <article key={item.id}>
-      <h2>{item.title || 'Borrador sin título'}</h2><PublicationStatus publication={item} />
+    {items?.length === 0 && <section className="publications-empty" aria-labelledby="publications-empty-title">
+      <span className="publications-empty-icon"><PackageOpen size={36} aria-hidden="true" /></span>
+      <h2 id="publications-empty-title">Todavía no tienes publicaciones.</h2>
+      <p>Comparte lo que ya no usas. Crea tu primera publicación para vender, intercambiar o prestar dentro de la comunidad.</p>
+      <Link className="publication-create" to="/publicar"><Plus size={18} aria-hidden="true" />Crear mi primera publicación</Link>
+    </section>}
+    <div className="publications-list">{items?.map(item => <article className="publication-card" key={item.id}>
+      <div className="publication-card-heading">{item.images?.[0] ? <img className="publication-card-photo" src={publicationImageUrl(item.images[0]) || undefined} alt={`Portada de ${item.title || 'borrador'}`} /> : <span className="publication-card-icon"><PackageOpen size={24} aria-hidden="true" /></span>}<h2>{item.title || 'Borrador sin título'}</h2></div><PublicationStatus publication={item} />
       {editing === item.id ? <>
         <p>Editar una publicación activa puede enviarla nuevamente a revisión. La decisión anterior deja de ser vigente.</p>
         <PublicationForm initial={item} busy={busy} label="Guardar cambios" onSave={body => mutate(item, null, body)} />
         <button disabled={busy} onClick={() => setEditing(null)}>Cancelar edición</button>
-      </> : <div>
-        {['Borrador', 'Pausada', 'Activa'].includes(item.status) && <button disabled={busy || Boolean(confirmation)} onClick={() => setEditing(item.id)}>Editar</button>}
+      </> : <div className="publication-actions">
+        {item.availability && <Link to="/operaciones?side=received">Ver solicitudes y coordinar entrega</Link>}
+        {['Borrador', 'Pausada', 'Activa'].includes(item.status) && <button disabled={busy || Boolean(confirmation) || ['sold','rented','loaned','reserved','future-reservations'].includes(item.availability?.state)} onClick={() => setEditing(item.id)}>Editar</button>}
         {item.status === 'Borrador' && <button disabled={busy || Boolean(confirmation)} onClick={e => ask(e, item, 'submit', 'Enviar')}>Enviar</button>}
         {item.status === 'Activa' && <button disabled={busy || Boolean(confirmation)} onClick={e => ask(e, item, 'pause', 'Pausar')}>Pausar</button>}
         {item.status === 'Pausada' && <button disabled={busy || Boolean(confirmation)} onClick={e => ask(e, item, 'reactivate', 'Reactivar')}>Reactivar</button>}
         {item.status !== 'Retirada' && <button disabled={busy || Boolean(confirmation)} onClick={e => ask(e, item, 'withdraw', 'Retirar')}>Retirar</button>}
       </div>}
-    </article>)}
+    </article>)}</div>
     {confirmation && <div role="dialog" aria-label={`Confirmar ${confirmation.label}`} onKeyDown={event => { if (event.key === 'Escape' && !busy) setConfirmation(null); }}>
       <h2>{confirmation.label}: {confirmation.item.title || 'Borrador sin título'}</h2>
       <p>{confirmation.action === 'withdraw' ? 'Retirar es definitivo. No podrás reactivar esta publicación.' : 'El servidor verificará los requisitos, el estado actual y las operaciones asociadas.'}</p>

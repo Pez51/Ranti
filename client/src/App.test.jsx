@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import App from './App';
 import { apiRequest } from './lib/api';
 import { session } from './test/workflows';
-vi.mock('./lib/api', () => ({ apiRequest: vi.fn() }));
+vi.mock('./lib/api', async importOriginal => ({ ...(await importOriginal()), apiRequest: vi.fn() }));
 beforeEach(() => { vi.resetAllMocks(); session(); apiRequest.mockResolvedValue([]); });
 it('routes the existing provider navigation to real own publications instead of sample metrics', async () => {
   window.history.replaceState({}, '', '/oferente'); render(<App />);
@@ -15,7 +15,8 @@ it('makes registration reachable without a session', () => {
   expect(screen.getByRole('heading', { name: 'Crear cuenta UCSM' })).toBeInTheDocument();
 });
 it('routes authenticated participants to their operations and exposes navigation', async () => {
-  apiRequest.mockResolvedValueOnce({ items: [], limit: 20, offset: 0 });
+  apiRequest.mockImplementation(path => Promise.resolve(path.startsWith('/operations/')
+    ? { items: [], limit: 20, offset: 0 } : []));
   window.history.replaceState({}, '', '/operaciones'); render(<App />);
   expect(await screen.findByText('No tienes solicitudes enviadas.')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Mis operaciones' })).toHaveAttribute('href', '/operaciones');

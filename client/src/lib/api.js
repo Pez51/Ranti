@@ -1,4 +1,21 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+export async function apiBlob(path,{token}={}){
+  const response=await fetch(`${API_BASE_URL}${path}`,{headers:token?{Authorization:`Bearer ${token}`}:{}});
+  if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.message||data.error?.message||'No se pudo abrir la boleta.');}
+  return response.blob();
+}
+
+export function apiAssetUrl(path) {
+  if (typeof path !== 'string' || !/^(?:\/api\/users\/photos\/[0-9a-f-]{36}\/[0-9a-f-]{36}|\/api\/publications\/photos\/[0-9a-f-]{36})$/i.test(path)) return null;
+  return `${new URL(API_BASE_URL).origin}${path}`;
+}
+
+export function publicationImageUrl(path) {
+  const local = apiAssetUrl(path);
+  if (local) return local;
+  try { const url = new URL(path); return url.protocol === 'https:' ? url.href : null; }
+  catch { return null; }
+}
 
 export async function apiRequest(path, { token, headers, ...options } = {}) {
   // AUTO-INYECCIÓN DEL TOKEN: Si no se pasa manual, lo busca en la memoria
@@ -7,13 +24,13 @@ export async function apiRequest(path, { token, headers, ...options } = {}) {
     try {
       const sessionData = JSON.parse(localStorage.getItem('ranti-session'));
       finalToken = sessionData?.token;
-    } catch (e) { /* Ignorar si no hay sesión */ }
+    } catch { /* Ignorar si no hay sesión */ }
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.body && typeof options.body === 'string' ? { 'Content-Type': 'application/json' } : {}),
       ...(finalToken ? { Authorization: `Bearer ${finalToken}` } : {}),
       ...headers,
     },
@@ -21,7 +38,7 @@ export async function apiRequest(path, { token, headers, ...options } = {}) {
 
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = typeof body.error === 'string' ? body.error : body.error?.message;
+    const message = typeof body.error === 'string' ? body.error : body.error?.message || body.message;
     const error = new Error(message || 'No se pudo completar la solicitud.');
     error.status = response.status;
     error.code = body.code || body.error?.code;

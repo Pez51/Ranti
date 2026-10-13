@@ -1,12 +1,13 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { Filter, AlertCircle, PackageSearch } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, publicationImageUrl } from '../../lib/api';
 import { getSession } from '../../lib/auth';
+import { rentalUnitLabel } from '../../lib/rental-units';
 
 const formatPrice = (product) => product.modality === 'Préstamo'
   ? 'Gratis'
-  : `S/ ${Number(product.price).toFixed(2)}${product.modality === 'Alquiler' ? '/día' : ''}`;
+  : `S/ ${Number(product.price).toFixed(2)}${product.modality === 'Alquiler' ? `/${rentalUnitLabel(product.rental_unit)}` : ''}`;
 
 export default function Home() {
   const [searchParams] = useSearchParams();
@@ -93,12 +94,13 @@ export default function Home() {
             <Link to={`/producto/${product.id}`} key={product.id} className="bg-white rounded-3xl border-4 border-ranti-ink p-4 shadow-solid hover:-translate-y-2 hover:shadow-solid-hover transition-all duration-300 flex flex-col h-full group">
               <div className="aspect-square bg-gray-100 rounded-2xl border-4 border-ranti-ink mb-4 overflow-hidden relative flex items-center justify-center">
                 <span className="absolute z-10 top-3 left-3 bg-yellow-300 text-ranti-ink text-xs font-display font-bold px-3 py-1.5 rounded-full border-4 border-ranti-ink shadow-solid-sm">{product.modality}</span>
-                {product.primary_image ? (<img src={product.primary_image} alt={product.title} className="w-full h-full object-cover" onError={(e) => { e.target.src = 'https://placehold.co/400x400/eeeeee/999999?text=Sin+Imagen'; }}/>) : (<PackageSearch size={64} className="text-gray-300" />)}
+                {product.primary_image ? (<img src={publicationImageUrl(product.primary_image) || undefined} alt={product.title} className="w-full h-full object-cover" onError={(e) => { e.target.src = 'https://placehold.co/400x400/eeeeee/999999?text=Sin+Imagen'; }}/>) : (<PackageSearch size={64} className="text-gray-300" />)}
               </div>
               <div className="flex-grow flex flex-col justify-between">
                 <div>
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{product.category}</p>
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{product.category==='Otros' && product.category_other?product.category_other:product.category}</p>
                   <h3 className="font-display font-bold text-xl leading-tight mb-3 line-clamp-2 text-ranti-ink">{product.title}</h3>
+                  {product.availability && <p className={`availability-badge availability-${product.availability.state}`}>{product.availability.label}</p>}
                 </div>
                 <p className="font-display font-bold text-2xl text-ranti-dark pt-4 border-t-4 border-gray-100">{formatPrice(product)}</p>
               </div>

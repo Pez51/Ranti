@@ -1,9 +1,11 @@
-import { Search, Menu, User, Bell } from 'lucide-react';
+import { Search, Menu, User, Bell, Package } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
 import NotificationDrawer from './NotificationDrawer';
 import MenuDrawer from './MenuDrawer';
-import { clearSession, getSession } from '../../lib/auth';
+import { clearSession, getSession, updateSessionProfile } from '../../lib/auth';
+import { apiRequest } from '../../lib/api';
+import AccountMenu from './AccountMenu';
 
 export default function Header() {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -15,6 +17,17 @@ export default function Header() {
   const [searchTerm, setSearchTerm] = useState(searchParams.get('q') || '');
   const [conditionTerm, setConditionTerm] = useState(searchParams.get('condition') || '');
   const navigate = useNavigate();
+  const token = session?.token;
+
+  useEffect(() => {
+    if (!token) return;
+    let current = true;
+    const initialUser = JSON.stringify(getSession()?.user);
+    apiRequest('/users/me', { token }).then(profile => {
+      if (current && JSON.stringify(getSession()?.user) === initialUser) updateSessionProfile(profile, token);
+    }).catch(() => {});
+    return () => { current = false; };
+  }, [token]);
 
   // Estados para el buscador retráctil
   const [hideSearch, setHideSearch] = useState(false);
@@ -118,23 +131,24 @@ export default function Header() {
               </Link>
 
               <div className="flex gap-2 md:gap-4 z-10">
-                {isLoggedIn && <Link to="/operaciones" className="bg-white text-ranti-ink px-3 py-2 rounded-full border-4 border-ranti-ink shadow-solid font-display font-bold text-sm flex items-center">Mis operaciones</Link>}
+                {isLoggedIn && <Link to="/operaciones" aria-label="Mis operaciones" className="bg-white text-ranti-ink px-3 py-2 rounded-full border-4 border-ranti-ink shadow-solid font-display font-bold text-sm flex items-center">
+                  <Package aria-hidden="true" size={20} className="sm:hidden" />
+                  <span className="hidden sm:inline">Mis operaciones</span>
+                </Link>}
                 {isLoggedIn && (
-                  <button onClick={() => setIsNotifOpen(true)} className="bg-yellow-300 text-ranti-ink p-2 rounded-full border-4 border-ranti-ink shadow-solid hover:bg-yellow-400 transition-all relative active:translate-y-1 active:shadow-solid-sm">
+                  <button aria-label="Notificaciones" onClick={() => setIsNotifOpen(true)} className="bg-yellow-300 text-ranti-ink p-2 rounded-full border-4 border-ranti-ink shadow-solid hover:bg-yellow-400 transition-all relative active:translate-y-1 active:shadow-solid-sm">
                     <Bell size={20} strokeWidth={2.5} />
                   </button>
                 )}
 
-                <div className="hidden sm:flex gap-2">
+                <div className="flex gap-2">
                   {!isLoggedIn ? (
                     <Link to="/login" className="bg-white text-ranti-ink p-2 md:px-6 md:py-2 rounded-full border-4 border-ranti-ink shadow-solid hover:bg-gray-100 transition-all font-display font-bold flex items-center gap-2">
                       <User size={20} />
                       <span className="hidden md:inline">INGRESAR</span>
                     </Link>
                   ) : (
-                    <Link to="/perfil" className="w-11 h-11 bg-pink-200 rounded-full border-4 border-ranti-ink shadow-solid overflow-hidden flex items-center justify-center hover:scale-105 transition-transform">
-                      <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(session.user.email)}`} alt="Perfil" className="w-full h-full object-cover" />
-                    </Link>
+                    <AccountMenu user={session.user} onLogout={handleLogout} />
                   )}
                 </div>
               </div>

@@ -33,6 +33,8 @@ El único proveedor de identidad disponible es `simulated`: sin SSO real y sin e
 
 El comando `npm run migrate --prefix server` aplica las migraciones pendientes hasta 022, en orden:
 
+Recuperación excepcional de una base manual local: si `ranti_db` tiene las tablas iniciales, el historial `schema_migrations` vacío y valores ENUM con tildes mal codificadas, no recrear tablas ni marcar migraciones arbitrariamente. Tras respaldar la base configurada, desde `server/` se puede ejecutar `node ../tools/repair-manual-baseline.mjs --backup-confirmed`. Esta herramienta solo admite desarrollo local `ranti_db`, los bytes conocidos de 001 con su adición de outbox legado, el contrato histórico completo y la columna opcional `career VARCHAR(100)` de 010. Corrige únicamente la codificación reconocida, valida todo el esquema y registra la base inicial en una transacción; cualquier deriva desconocida revierte la reparación. Después aplica las migraciones pendientes por el runner normal. No modifica contraseñas ni reglas de autenticación, no borra datos y no sustituye las validaciones del arranque. Si cambia `.env` después de un fallo de arranque, detener y volver a ejecutar `npm run dev` desde la raíz.
+
 Con `NODE_ENV=development`, el servidor también aplica las migraciones pendientes al arrancar y comprueba las tablas de chat, calendario, entrega y pago simulado **antes** de escuchar peticiones. Usa la misma conexión `DATABASE_URL` que la aplicación: no cambia de base ni inventa credenciales. Si una migración falla o el historial declara tablas que faltan, detiene el arranque con diagnóstico; no borra datos ni ignora checksums. En producción, las migraciones siguen siendo un paso explícito de despliegue.
 
 | Archivo | Contenido |

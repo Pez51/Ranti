@@ -9,7 +9,7 @@ export function baselineValidationError(detail) {
 
 // Called inside the adoption transaction while the migration session lock is held.
 // This deliberately accepts only the unmodified public-schema historical baseline.
-export async function validateBaseline(client) {
+export async function validateBaseline(client, { allowCareerColumn = false } = {}) {
   const context = (await client.query(`SELECT current_schema() AS schema,
     EXISTS (SELECT 1 FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
       WHERE e.extname = 'uuid-ossp' AND n.nspname = 'public') AS extension,
@@ -39,7 +39,9 @@ export async function validateBaseline(client) {
       pg_get_expr(d.adbin, d.adrelid) AS default_value
       FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
       WHERE a.attrelid = $1 AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum`, [oid]);
-    if (!isDeepStrictEqual(columns.map((c) => [c.name, c.type, c.required, c.default_value]), expected.columns)) {
+    const coreColumns = columns.filter(c => !(allowCareerColumn && name === 'users' && c.name === 'career'
+      && c.type === 'character varying(100)' && !c.required && c.default_value === null));
+    if (!isDeepStrictEqual(coreColumns.map((c) => [c.name, c.type, c.required, c.default_value]), expected.columns)) {
       throw baselineValidationError(`columns of ${name} differ`);
     }
     const { rows: constraints } = await client.query(`SELECT pg_get_constraintdef(oid) AS definition,

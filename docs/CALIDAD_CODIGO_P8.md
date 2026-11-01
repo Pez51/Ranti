@@ -179,3 +179,41 @@ Se publicó únicamente configuración de calidad en main mediante el commit e32
 Se detectó que Sonar había creado master como principal y main como secundaria. Con confirmación expresa del usuario se eliminó exclusivamente esa rama secundaria de análisis y se renombró la principal a main, sin eliminar ramas ni código GitHub. Se repite el análisis después de corregir este ajuste, el dialecto SQL y los tipos de entorno del chequeo. El primer intento no se usa como evidencia del estado final.
 
 Las variables públicas SONAR_ORGANIZATION y SONAR_PROJECT_KEY fueron guardadas y verificadas en GitHub. El token fue aceptado por el scanner al comunicarse con SonarQube Cloud. Los fallos locales documentados siguen pendientes de resolución funcional; no se afirma CI aprobado.
+
+[Ejecución corregida número 2](https://github.com/Pez51/Ranti/actions/runs/41258080188), commit bb83882b0dd17fe8ed2d932017396ed8af81b879: instalación reproducible y carga de artefactos completadas en ambos jobs. En cliente, lint, Vitest y compilación aprobados; typecheck fallido. En servidor, lint, typecheck y Vitest fallidos. El job Sonar recibió ambos artefactos y validó claves/token. Estos estados se comprobaron en la API pública de GitHub y se conservaron en reports/quality-p8/remote-run-2.json y remote-jobs-2.json. Los datos remotos corresponden al código publicado, mientras las métricas locales anteriores incluyen los avances que el usuario decidió no publicar.
+
+El registro del scanner corregido confirmó `Sensor JavaScript/TypeScript Coverage` y la lectura de los dos archivos sonar-lcov.info de cliente/servidor. También confirmó inspección de texto/secretos de 219 fuentes. SonarScanner CLI utilizado por la acción: 8.1.0.6389. En la primera ejecución, el frontend publicado ejecutó 195 pruebas aprobadas en 28 archivos, frente a las 227 pruebas/36 archivos de la copia local: son versiones diferentes, no una pérdida de pruebas.
+
+### Resultado real de SonarQube Cloud
+
+La ejecución 2 terminó con conclusión failure. El scanner generó y subió el informe, esperó su procesamiento y registró a las 00:52:36 UTC del 01/11/2026 (19:52:36 del 31/10 en Lima): `QUALITY GATE STATUS: FAILED`, `EXECUTION FAILURE`, salida 3. Esto es rechazo de la puerta de calidad después de analizar, no un fallo de autenticación ni ausencia de cobertura. Evidencia: reports/quality-p8/github-sonar-quality-gate-failed.png y el job Sonar de la ejecución enlazada.
+
+| Medida del código publicado | Valor observado |
+|---|---:|
+| Cobertura Sonar, código total | 81,2 % |
+| Líneas duplicadas, código total | 0,4 % |
+| Incidencias distintas, código total | 30 |
+| Incidencias con impacto en seguridad | 6; rating E |
+| Incidencias con impacto en fiabilidad | 24; rating D |
+| Incidencias con impacto en mantenibilidad | 5; rating A |
+| Security hotspots | 0 |
+| Riesgos de dependencias | 41; rating C |
+
+Una incidencia puede afectar varias calidades: no sumar 6 + 24 + 5 como si fueran incidencias distintas. Los riesgos de dependencias tampoco equivalen a las cifras npm audit ni deben sumarse a ellas. Estas cifras pertenecen al commit publicado bb83882b, no a los cambios funcionales locales sin publicar.
+
+Hallazgos concretos que se dejaron abiertos para revisión:
+
+- Cinco hashes bcrypt incrustados en server/src/db/seed.sql, líneas 15–19, clasificados por Sonar como seguridad Blocker y etiquetados secret. No se reproducen los valores ni contraseñas. Revisar el aprovisionamiento de cuentas de demostración y evitar reutilizarlas en entornos reales. No se excluyó el archivo para ocultarlos ni se marcaron automáticamente como falsos positivos.
+- `Path Traversal via unsanitized user input` en server/src/modules/publications/publication-photo.js, línea 21, impacto Security Blocker. [Abrir incidencia](https://sonarcloud.io/project/issues?open=AaGUl9_dwmll2o7CZrR2&id=pablogiaccomo_ranti). Revisar el flujo de identificadores y la contención de rutas antes de decidir una corrección. Es un hallazgo estático pendiente de validar, no una explotación demostrada durante estas pruebas.
+
+No se modificaron reglas, severidades, exclusiones de negocio ni estados de las incidencias para conseguir un Gate verde. La interfaz Summary mostraba inicialmente Not computed y avisaba que el próximo análisis actualizaría el estado; el registro del scanner de esa ejecución sí informó FAILED. Conservar ambas evidencias si persiste la diferencia y comprobar nuevamente el panel en el siguiente análisis. La interfaz también informa que ignora cobertura/duplicación de código nuevo cuando hay menos de 20 líneas nuevas; esa política predeterminada no se cambió.
+
+Capturas locales disponibles: sonar-summary-final.png (métricas), sonar-overview-final.png, sonar-main-configured.png, github-sonar-quality-gate-failed.png y github-sonar-secret.png, todas en reports/quality-p8. El resultado global de CI sigue fallido por hallazgos reales; esta implementación configura y verifica su detección, sin afirmar que el producto haya alcanzado calidad aprobada.
+
+### Pasos manuales que pueden seguir siendo necesarios
+
+- Para acceder a Sonar, usar el mismo inicio de sesión GitHub. No existe una contraseña nueva que entregar; el token permanece en GitHub Secrets.
+- Para decoraciones de PR, el propietario de Pez51 debe autorizar la aplicación GitHub de SonarQube Cloud para Ranti y completar la vinculación en Sonar → Administration → General settings → Repository binding. La cuenta personal utilizada no ofrecía ese repositorio en la importación.
+- Revisar los límites/condiciones del plan en Billing y la disponibilidad de análisis de PR. No se autorizaron pagos ni actualizaciones de plan.
+- Resolver los hallazgos de código y contratos en cambios posteriores; repetir checks sin retirar pruebas ni desactivar reglas para forzar aprobación.
+- Guardar las capturas enumeradas en este informe y descargar los artefactos desde Actions. La descarga automática de artefactos se bloqueó en el navegador durante esta sesión; los cuatro artefactos sí quedaron publicados en GitHub.

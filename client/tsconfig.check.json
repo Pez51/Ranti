@@ -5,17 +5,18 @@
     "noEmit": true,
     "skipLibCheck": true,
     "strict": false,
-    "target": "ES2023",
+    "target": "ES2024",
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "types": [
       "node",
       "react",
-      "react-dom"
+      "react-dom",
+      "vite/client"
     ],
     "jsx": "react-jsx",
     "lib": [
-      "ES2023",
+      "ES2024",
       "DOM",
       "DOM.Iterable"
     ]

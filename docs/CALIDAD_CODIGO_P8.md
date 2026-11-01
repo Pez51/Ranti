@@ -32,7 +32,7 @@ El PDF previo `Practica8 ranti.pdf` contiene otras tecnologías y métricas (inc
 | Compilación Vite/PWA | Aprobada; dist, service worker y precache generados | 0 |
 | Vitest cliente con V8 | 227 aprobadas, 0 fallidas, 0 omitidas; 36 archivos | 0 |
 | ESLint servidor | 16 errores, 0 advertencias | 1 |
-| Typecheck cliente | 30 diagnósticos TS | 2 |
+| Typecheck cliente | 28 diagnósticos TS tras corregir tipos de Vite y lib ES2024 | 2 |
 | Typecheck servidor | 98 diagnósticos TS | 2 |
 | Vitest servidor con PostgreSQL y V8 | 462 aprobadas, 160 fallidas, 0 omitidas; 45 archivos, 12 con fallos | 1 |
 | Preparación LCOV | Ambos informes preparados con rutas relativas a la raíz | 0 |
@@ -62,10 +62,12 @@ Fuentes: coverage/coverage-summary.json de cada paquete, informes HTML coverage/
 | Integración | Fallos en historial de migraciones, valores numéricos como string, códigos HTTP y flujos de roles/publicaciones. Pendiente decidir contrato correcto antes de cambiar negocio o expectativas |
 | Lint servidor | no-unsafe-finally en migraciones, variables/argumentos sin usar y asignaciones inútiles. Lista completa en server-lint.log |
 | Tipos | Propiedades de Error, argumentos/props obligatorios, Element.focus, EventTarget.src, FormData y unión HTMLImageElement/ImageBitmap. Sin ts-nocheck ni noCheck global |
+| Entorno del typecheck | Se añadieron los tipos vite/client para import.meta.env y ES2024 para Object.groupBy, utilizado por el código real. Se repitió typecheck: cliente pasó de 30 a 28 diagnósticos; servidor conserva 98. No se añadieron polyfills ni se modificó lógica |
 | Dependencias | npm audit: raíz 6 (5 moderadas, 1 crítica); cliente 26 (3 bajas, 18 moderadas, 5 altas); servidor 11 (7 moderadas, 4 altas). No sumar por duplicidades. Es auditoría de dependencias, distinta de Sonar. No se ejecutó audit fix --force |
 | Cobertura antes ausente | Proveedores V8 con la versión exacta de cada Vitest; reportes HTML, LCOV y JSON; inclusión explícita de todo el código |
 | LCOV en monorepo | tools/prepare-sonar-coverage.mjs genera sonar-lcov.info con prefijos client/ y server/, conserva contadores y original, y rechaza fuentes fuera del repositorio |
 | Lanzador PostgreSQL Windows | La captura de salida bloqueaba el arranque. Se separaron streams de pg_ctl con Start-Process -WindowStyle Hidden y se esperó únicamente su proceso. La ejecución corregida completó pruebas y detuvo/limpió su clúster |
+| Dialecto SQL en Sonar | El primer scanner clasificó los archivos PostgreSQL como Oracle PL/SQL y emitió errores de parsing. Se limitó PL/SQL a la extensión .plsql y se mantuvieron los .sql en inspección de texto/secretos. No se afirma análisis semántico PostgreSQL con un parser incompatible |
 | Cambios anteriores | Se preservan. git diff --check global detecta espacios finales ajenos a esta configuración; no se limpiaron incidentalmente |
 
 Distribución de las 160 pruebas fallidas por archivo:
@@ -133,6 +135,25 @@ Sonar descarga los reportes e intenta analizar aunque fallen validaciones, siemp
 
 No hay despliegue configurado ni se afirma CD implementado.
 
+## Archivos de esta implementación
+
+- `.github/workflows/calidad-p8.yml`: ejecución automática y artefactos.
+- `sonar-project.properties`: alcance, claves públicas y reportes LCOV.
+- `package.json` y `package-lock.json`: herramientas compartidas y comandos.
+- `client/package.json`, `client/package-lock.json`, `server/package.json`, `server/package-lock.json`: proveedores de cobertura y scripts de cada paquete.
+- `client/vitest.config.js`, `server/vitest.config.js`: cobertura de fuentes completas.
+- `client/eslint.config.js`: ignorar cobertura generada; reglas existentes conservadas.
+- `server/eslint.config.js`: análisis del servidor y sus pruebas.
+- `client/tsconfig.check.json`, `server/tsconfig.check.json`: typecheck JavaScript.
+- `tools/prepare-sonar-coverage.mjs`: normalización de rutas, sin alterar contadores; se verificaron las 59 fuentes cliente y 78 servidor del LCOV local.
+- `tools/test-postgres.ps1`: arranque oculto y captura fiable de PostgreSQL temporal en Windows.
+- `.gitignore`: excluir informes, cobertura y scannerwork.
+- `docs/CALIDAD_CODIGO_P8.md`: este informe.
+
+Los cambios funcionales previos permanecen locales por indicación expresa del usuario; solamente se publicó esta configuración de calidad. Se validó YAML, instalación limpia de los tres paquetes y conservación de las 81 pruebas mediante SHA-256.
+
+La revisión automática rechazó la limpieza de las carpetas temporales de instalación y de dos arranques de diagnóstico. No indicó un motivo específico. Permanecen fuera del repositorio; esas instancias PostgreSQL están detenidas. El clúster de la ejecución completa corregida sí fue detenido y limpiado por el helper.
+
 ## Capturas y evidencias para la rúbrica
 
 1. Terminal con lint, tipos y resúmenes Vitest completos, mostrando fallos reales y omitidas.
@@ -153,4 +174,8 @@ No hay despliegue configurado ni se afirma CD implementado.
 
 ## Estado remoto al cierre
 
-Pendiente de publicar el workflow y ejecutar el primer análisis. No se atribuyen resultados de Quality Gate, duplicación, vulnerabilidades ni éxito de CI sin evidencia remota. Los fallos locales documentados siguen pendientes de resolución funcional.
+Se publicó únicamente configuración de calidad en main mediante el commit e325b04080f5f2a94f86e98cbe27ba139f128708. [Primera ejecución automática](https://github.com/Pez51/Ranti/actions/runs/41257406387): instalación y generación/publicación de los cuatro artefactos verificadas; jobs de validación fallidos por hallazgos de tipos/lint/pruebas del código publicado.
+
+Se detectó que Sonar había creado master como principal y main como secundaria. Con confirmación expresa del usuario se eliminó exclusivamente esa rama secundaria de análisis y se renombró la principal a main, sin eliminar ramas ni código GitHub. Se repite el análisis después de corregir este ajuste, el dialecto SQL y los tipos de entorno del chequeo. El primer intento no se usa como evidencia del estado final.
+
+Las variables públicas SONAR_ORGANIZATION y SONAR_PROJECT_KEY fueron guardadas y verificadas en GitHub. El token fue aceptado por el scanner al comunicarse con SonarQube Cloud. Los fallos locales documentados siguen pendientes de resolución funcional; no se afirma CI aprobado.

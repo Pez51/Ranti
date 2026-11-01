@@ -8,7 +8,10 @@
     "start": "node server.js",
     "migrate": "node src/db/migrate.js",
     "expire:operations": "node src/jobs/expire-operations.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "node ../node_modules/eslint/bin/eslint.js .",
+    "typecheck": "node ../node_modules/typescript/bin/tsc -p tsconfig.check.json --pretty false",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +33,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "5.0.1",
     "bpmn-moddle": "^10.3.1",
     "nodemon": "^3.1.14",
     "supertest": "^7.3.0",

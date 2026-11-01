@@ -27,3 +27,8 @@ server/uploads/
 Thumbs.db
 .vscode/
 .idea/
+
+# Informes de calidad generados
+coverage/
+reports/
+.scannerwork/

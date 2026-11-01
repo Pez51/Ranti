@@ -2,6 +2,14 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.js', 'server.js'],
+      exclude: ['**/*.test.*', '**/*.spec.*', '**/test/**', '**/tests/**'],
+      reporter: ['text', 'html', 'lcov', 'json-summary'],
+      reportsDirectory: './coverage',
+      reportOnFailure: true,
+    },
     env: {
       NODE_ENV: 'test',
       PORT: '3000',

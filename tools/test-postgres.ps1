@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$PostgresBin = 'C:\Program Files\PostgreSQL\17\bin',
     [string[]]$TestArguments = @()
 )
@@ -29,8 +29,13 @@ try {
 
     & (Join-Path $PostgresBin 'initdb.exe') -D $dataDir -U ranti_test -A trust --no-locale --encoding=UTF8
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo inicializar PostgreSQL temporal.' }
-    & (Join-Path $PostgresBin 'pg_ctl.exe') -D $dataDir -l (Join-Path $clusterRoot 'postgres.log') -o "-h 127.0.0.1 -p $port -F" -w start
-    if ($LASTEXITCODE -ne 0) { throw 'No se pudo iniciar PostgreSQL temporal.' }
+    # Detach PostgreSQL's inherited console streams so redirected CI/report output does not hang.
+    $pgStart = Start-Process -FilePath (Join-Path $PostgresBin 'pg_ctl.exe') -ArgumentList @(
+        '-D', ('"{0}"' -f $dataDir), '-l', ('"{0}"' -f (Join-Path $clusterRoot 'postgres.log')),
+        '-o', ('"-h 127.0.0.1 -p {0} -F"' -f $port), '-w', 'start'
+    ) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $clusterRoot 'pg-ctl-start.log') -RedirectStandardError (Join-Path $clusterRoot 'pg-ctl-start-error.log')
+    $pgStart.WaitForExit()
+    if ($pgStart.ExitCode -ne 0) { throw 'No se pudo iniciar PostgreSQL temporal.' }
     $serverStarted = $true
     & (Join-Path $PostgresBin 'createdb.exe') -h 127.0.0.1 -p $port -U ranti_test ranti_test
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear la base de pruebas.' }

@@ -7,9 +7,21 @@
     "setup": "npm install && npm install --prefix server && npm install --prefix client",
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
-    "dev": "concurrently -c \"cyan.bold,green.bold\" \"npm run dev:server\" \"npm run dev:client\""
+    "dev": "concurrently -c \"cyan.bold,green.bold\" \"npm run dev:server\" \"npm run dev:client\"",
+    "ci:install": "npm ci && npm ci --prefix client && npm ci --prefix server",
+    "lint": "npm run lint --prefix client && npm run lint --prefix server",
+    "typecheck": "npm run typecheck --prefix client && npm run typecheck --prefix server",
+    "test": "npm run test --prefix client && npm run test --prefix server",
+    "test:coverage": "npm run test:coverage --prefix client && npm run test:coverage --prefix server",
+    "build": "npm run build --prefix client",
+    "sonar:coverage": "node tools/prepare-sonar-coverage.mjs"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "concurrently": "^8.2.2",
+    "eslint": "10.10.0",
+    "globals": "17.12.0",
+    "typescript": "5.9.3"
   }
 }

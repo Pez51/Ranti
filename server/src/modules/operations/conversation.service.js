@@ -35,7 +35,9 @@ export async function startOperationConversation(db,id,actor){
   uuid(id);
   const row=(await db.query('SELECT publication_id,demandante_id FROM operations WHERE id=$1 AND (oferente_id=$2 OR demandante_id=$2)',[id,actor])).rows[0];
   if(!row)throw fail(404,'Operación no encontrada.');
-  return startConversation(db,row.publication_id,actor,row.demandante_id);
+  const chat=await startConversation(db,row.publication_id,actor,row.demandante_id);
+  await db.query('INSERT INTO operation_conversation_links(operation_id,conversation_id) VALUES($1,$2) ON CONFLICT(operation_id) DO NOTHING',[id,chat.id]);
+  return {...chat,operation_id:id};
 }
 export async function listConversations(db,actor,offset=0){
   if(!Number.isInteger(offset)||offset<0||offset>10000)throw fail(400,'Página inválida.');

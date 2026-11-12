@@ -42,6 +42,7 @@ export const cancelExpiredOperations = async () => {
     SET status = 'Cancelada', updated_at = CURRENT_TIMESTAMP 
     WHERE status = 'Pendiente de pago/garantía' 
     AND created_at < NOW() - INTERVAL '24 hours'
+    AND NOT EXISTS(SELECT 1 FROM incidences WHERE operation_id=operations.id AND status NOT IN ('Resuelta','Desestimada'))
     RETURNING id;
   `;
   // Para esta operación autónoma usamos pool directamente

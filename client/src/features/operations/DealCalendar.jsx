@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import HandoffPanel from './HandoffPanel';
+import FinancePanel from './FinancePanel';
 
 const time=date=>new Date(date).toLocaleTimeString('es-PE',{timeZone:'America/Lima',hour:'2-digit',minute:'2-digit',hour12:false});
 const dayLabel=date=>new Date(`${date}T12:00:00-05:00`).toLocaleDateString('es-PE',{weekday:'short',day:'numeric',month:'short',timeZone:'America/Lima'});
@@ -33,7 +34,7 @@ export default function DealCalendar({deal,token,defaultOpen=false,onSaved}){
   }
   async function coordinate(body,payment=false){
     if(busy)return;setBusy(true);setError('');
-    try{const result=await apiRequest(`/operations/${deal.id}/${payment?'payment-simulation':'handoff'}`,{token,method:'POST',body:JSON.stringify(body)});if(alive.current){setOperation(result.operation);await refresh();}}
+    try{const result=await apiRequest(`/operations/${deal.id}/${payment?'payment-simulation':'handoff'}`,{token,method:'POST',body:JSON.stringify(body)});if(alive.current){setOperation(result.operation);if(result.handoff_error)setError(result.handoff_error);await refresh();}}
     catch(e){if(alive.current)setError(e.message);}finally{if(alive.current)setBusy(false);}
   }
   let days=[],available=[];
@@ -103,7 +104,7 @@ export default function DealCalendar({deal,token,defaultOpen=false,onSaved}){
         </div>}
         </section>
       </>}
-      {operation&&<section className="calendar-step calendar-meeting" aria-label="3. Encuentro y entrega"><header className="calendar-step-heading"><span>3</span><div><h3>Encuentro y entrega</h3><p>Revisen la propuesta y confirmen juntos el lugar y la hora.</p></div></header><HandoffPanel key={`${operation.id}-${operation.handoff.revision}`} operation={operation} busy={busy} onAction={body=>coordinate(body)} onPayment={()=>coordinate({confirm_simulation:true},true)}/></section>}
+      {operation&&<section className="calendar-step calendar-meeting" aria-label="3. Encuentro y entrega"><header className="calendar-step-heading"><span>3</span><div><h3>Encuentro y entrega</h3><p>Revisen la propuesta y confirmen juntos el lugar y la hora.</p></div></header><HandoffPanel key={`${operation.id}-${operation.handoff.revision}`} operation={operation} busy={busy} token={token} onRefresh={refresh} onAction={body=>coordinate(body)} onPayment={()=>coordinate({confirm_simulation:true},true)}/>{operation.finance_enabled&&<FinancePanel operationId={operation.id} token={token} owner={operation.handoff.is_owner} onCompleted={refresh}/>}</section>}
     </>}
   </section>;
 }

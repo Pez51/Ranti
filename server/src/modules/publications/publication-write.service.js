@@ -1,12 +1,13 @@
 import { AppError } from '../../shared/errors/app-error.js';
 import { requireCurrentUser } from '../users/profile.service.js';
+import { readPaymentProfile } from '../users/payment-profile.service.js';
 import { dateValue, evaluatePublicationRisk, money } from './risk.policy.js';
 import { publicationPhotoPattern, publicationImageReference } from './publication-photo.js';
 import { appendAudit } from '../audit/audit.repository.js';
 import { provenanceReference,requireOwnedProvenance } from './provenance-files.js';
 
 const fail = (status, message) => new AppError({ status, code: 'PUBLICATION_INVALID', message });
-const fields = ['title','description','category','condition','modality','price','guarantee_amount','available_from','available_until','provenance_evidence_ref','category_other','condition_rating','rental_unit'];
+const fields = ['title','description','category','condition','modality','price','guarantee_amount','available_from','available_until','provenance_evidence_ref','category_other','condition_rating','rental_unit','guarantee_required','accessories'];
 export async function writePublication(db, ownerId, id, input) {
   const client = await db.connect();
   try {
@@ -20,8 +21,11 @@ export async function writePublication(db, ownerId, id, input) {
       const operations = await client.query('SELECT status FROM operations WHERE publication_id=$1 ORDER BY id FOR UPDATE', [id]);
       if (operations.rows.some(row => !['Pendiente','Cancelada','Rechazada','Expirada','Cerrada'].includes(row.status))) throw fail(409, 'La publicación tiene una operación activa.');
     }
-    const data = { title:'',description:'',category:'',condition:'',modality:'Venta',price:null,guarantee_amount:0,
+    const data = { title:'',description:'',accessories:null,category:'',condition:'',modality:'Venta',price:null,guarantee_amount:0,
       available_from:null,available_until:null,provenance_evidence_ref:null,category_other:null,condition_rating:null,rental_unit:'day',...previous,...input };
+    data.guarantee_required=data.modality!=='Venta' && (data.guarantee_required??false);
+    if(typeof data.guarantee_required!=='boolean')throw fail(400,'Indica si la garantía es obligatoria.');
+    if(data.guarantee_required&&money(data.guarantee_amount??0).cents<=0n)throw fail(400,'Indica un importe mayor a cero para la garantía obligatoria.');
     if(data.modality!=='Alquiler')data.rental_unit='day';
     if(!['hour','day','week','month'].includes(data.rental_unit))throw fail(400,'Selecciona una unidad de cobro válida.');
     if(data.description.length>1000) throw fail(400,'La descripción debe tener como máximo 1000 caracteres.');
@@ -58,6 +62,7 @@ export async function writePublication(db, ownerId, id, input) {
           reviewed_by=CASE WHEN $${statusParameter}::publication_status='Pendiente de revisión' THEN NULL ELSE reviewed_by END,
           reviewed_at=CASE WHEN $${statusParameter}::publication_status='Pendiente de revisión' THEN NULL ELSE reviewed_at END,
           review_reason=CASE WHEN $${statusParameter}::publication_status='Pendiente de revisión' THEN NULL ELSE review_reason END,
+          review_outcome=CASE WHEN $${statusParameter}::publication_status='Pendiente de revisión' THEN NULL ELSE review_outcome END,
           updated_at=clock_timestamp() WHERE id=$1 RETURNING *`, [id,...values,status,risk?.level ?? null,risk?.policyVersion ?? null])).rows[0]
       : (await client.query(`INSERT INTO publications (owner_id,${fields.join(',')},status,risk_level,risk_policy_version)
           VALUES ($1,${fields.map((_,i) => `$${i+2}`).join(',')},'Borrador',$${statusParameter},$${statusParameter+1}) RETURNING *`, [ownerId,...values,risk?.level ?? null,risk?.policyVersion ?? null])).rows[0];
@@ -78,6 +83,8 @@ export async function submitPublicationDraft(db, ownerId, id) {
     if (!row) throw fail(404,'Publicación no encontrada.');
     const images = (await client.query('SELECT image_url FROM publication_images WHERE publication_id=$1 ORDER BY position',[id])).rows.map(row => row.image_url);
     if (row.status !== 'Borrador') throw fail(409,'Solo puedes enviar un borrador.');
+    const paymentProfile = row.modality === 'Préstamo' ? null : await readPaymentProfile(client,ownerId);
+    if(paymentProfile?.payout&&!paymentProfile.owner_ready)throw fail(409,'Verifica tu destino de cobro y elige los medios que aceptas antes de enviar.');
     if(row.category==='Otros' && !row.category_other?.trim()) throw fail(422,'Indica el tipo de artículo en Otros.');
     if (['title','description','category','condition'].some(key => !row[key]?.trim()) || !images.length || images.length > 7) throw fail(422,'Completa los datos y agrega de 1 a 7 fotos antes de enviar.');
     const risk = evaluatePublicationRisk({modality:row.modality,price:row.price,guaranteeAmount:row.guarantee_amount,availableFrom:row.available_from,availableUntil:row.available_until});
@@ -85,7 +92,7 @@ export async function submitPublicationDraft(db, ownerId, id) {
     await requireOwnedProvenance(client,row.provenance_evidence_ref,ownerId);
     const status = risk.requiresAdminReview ? 'Pendiente de revisión' : 'Activa';
     const result = (await client.query(`UPDATE publications SET status=$2::publication_status,risk_level=$3,risk_policy_version=$4,
-      submitted_at=date_trunc('milliseconds',clock_timestamp()),reviewed_by=NULL,review_reason=NULL,reviewed_at=NULL,
+      submitted_at=date_trunc('milliseconds',clock_timestamp()),reviewed_by=NULL,review_reason=NULL,reviewed_at=NULL,review_outcome=NULL,
       published_at=CASE WHEN $2::publication_status='Activa' THEN clock_timestamp() ELSE NULL END,updated_at=clock_timestamp()
       WHERE id=$1 RETURNING *`,[id,status,risk.level,risk.policyVersion])).rows[0];
     await appendAudit(client,{actorId:ownerId,action:'publication.submitted',entityType:'publication',entityId:id,newValues:{status}});

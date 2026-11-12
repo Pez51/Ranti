@@ -33,3 +33,11 @@ it('keeps the confirmation open after an API failure',async()=>{
   expect(await screen.findByRole('alert')).toHaveTextContent('El acuerdo cambió');
   expect(onCompleted).not.toHaveBeenCalled();expect(screen.getByRole('dialog')).toBeInTheDocument();
 });
+it('opens the finance quote view for new operations without the legacy total or bypass payment button',async()=>{
+ apiRequest.mockResolvedValueOnce({operation:{...operation,finance_enabled:true}}).mockResolvedValueOnce({operation_status:'Pendiente de pago/garantía',methods:[{id:'simulated',label:'Simulación local'}],quote:null,payment:null,transfer:{condition:'Recepción conforme'}});
+ render(<ChatPaymentDialog operationId="op-1" token="token"/>);
+ expect(await screen.findByRole('button',{name:'Calcular y revisar total'})).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Confirmar simulación sin cobro'})).not.toBeInTheDocument();
+ expect(screen.queryByText(/Total de uso simulado/)).not.toBeInTheDocument();
+ expect(apiRequest.mock.calls[1][0]).toBe('/operations/op-1/finance');
+});

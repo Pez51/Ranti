@@ -1,0 +1,13 @@
+import express from 'express';
+import pool from '../config/database.js';
+import { requireAuth,requireVerifiedAccount } from '../middlewares/auth.middleware.js';
+import { AppError } from '../shared/errors/app-error.js';
+import { readOperationReview,submitOperationReview,readUserReviews,readProductReviews } from '../modules/operations/review.service.js';
+const router=express.Router();
+const handler=fn=>async(req,res,next)=>{try{res.set('Cache-Control','private, no-store').json(await fn(req));}catch(e){next(e instanceof AppError?e:new AppError({status:500,code:'REVIEW_ERROR',message:'No se pudo consultar o registrar la evaluación.'}));}};
+const member=[requireAuth,requireVerifiedAccount];
+router.get('/operations/:id/review',...member,handler(req=>readOperationReview(pool,req.params.id,req.user.id)));
+router.post('/operations/:id/review',...member,handler(req=>submitOperationReview(pool,req.params.id,req.user.id,req.body)));
+router.get('/users/:id/reviews',...member,handler(req=>readUserReviews(pool,req.params.id,req.user.id,req.query.offset===undefined?0:Number(req.query.offset))));
+router.get('/publications/:id/reviews',handler(req=>readProductReviews(pool,req.params.id,req.query.offset===undefined?0:Number(req.query.offset))));
+export default router;

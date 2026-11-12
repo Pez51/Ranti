@@ -37,6 +37,8 @@ El calendario consulta actualizaciones cada 45 segundos mientras está abierto y
 
 ### Pago simulado después de coordinar
 
+Para la nueva base económica de Venta/Alquiler, consultar [Operaciones, pagos y constancias](operation-finance.md): cotización aceptada, cargo de servicio único, estados separados, conciliación administrativa y documentos de ambas partes. La burbuja del chat abre ese resumen; ya no presenta el importe legado sin cargo como si fuera el total nuevo. El flujo previo descrito abajo queda como compatibilidad del piloto, especialmente Préstamo e históricos, no como integración de dinero real.
+
 El chat muestra al solicitante una burbuja «Continuar al pago simulado» únicamente mientras el encuentro actual esté confirmado por ambos y la simulación siga pendiente. Abre una confirmación amplia con el importe calculado por el servidor, lugar y hora. Abrirla no registra ningún pago: debe pulsar «Confirmar simulación sin cobro». El servidor vuelve a verificar participantes, estado y acuerdo. No aparece al oferente, ni antes del acuerdo, ni después del pago o de una cancelación. Cambiar la propuesta la deshabilita hasta un nuevo acuerdo; una simulación previa nunca se repite por recoordinar.
 
 Secuencia: aceptación → calendario opcional o coordinación manual → propuesta confirmada por la otra persona → Pendiente de pago simulado → simulación por el solicitante → Lista para entrega → declaraciones bilaterales de entrega. Alquiler/préstamo añaden devolución bilateral.

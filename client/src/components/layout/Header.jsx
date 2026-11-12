@@ -18,6 +18,26 @@ export default function Header() {
   const [conditionTerm, setConditionTerm] = useState(searchParams.get('condition') || '');
   const navigate = useNavigate();
   const token = session?.token;
+  const [unreadCount, setUnreadCount] = useState(0);
+  const displayUnread = token ? unreadCount : 0;
+
+  useEffect(() => {
+    if (!token) return;
+    let current = true;
+    const fetchUnread = () => {
+      apiRequest('/notifications', { token })
+        .then(data => {
+          if (current && Array.isArray(data)) {
+            const count = data.filter(n => n.status === 'No leida').length;
+            setUnreadCount(count);
+          }
+        })
+        .catch(() => {});
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => { current = false; clearInterval(interval); };
+  }, [token, isNotifOpen]);
 
   useEffect(() => {
     if (!token) return;
@@ -138,6 +158,11 @@ export default function Header() {
                 {isLoggedIn && (
                   <button aria-label="Notificaciones" onClick={() => setIsNotifOpen(true)} className="bg-yellow-300 text-ranti-ink p-2 rounded-full border-4 border-ranti-ink shadow-solid hover:bg-yellow-400 transition-all relative active:translate-y-1 active:shadow-solid-sm">
                     <Bell size={20} strokeWidth={2.5} />
+                    {displayUnread > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[11px] font-bold px-1.5 py-0.5 rounded-full border-2 border-ranti-ink min-w-[20px] text-center leading-none">
+                        {displayUnread > 9 ? '9+' : displayUnread}
+                      </span>
+                    )}
                   </button>
                 )}
 

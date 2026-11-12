@@ -25,13 +25,15 @@ PAYMENT_PROVIDER=simulated
 IDENTITY_PROVIDER=simulated
 IDENTITY_SIMULATOR_EXPOSE_CODE=false
 OPERATION_REQUEST_TTL_HOURS=48
+INCIDENCE_REPORT_WINDOW_DAYS=7
+REVIEW_PUBLICATION_DAYS=7
 RANTI_PHOTO_DIR=C:/RantiData/profile-photos
 RANTI_PUBLICATION_PHOTO_DIR=C:/RantiData/publication-photos
 ```
 
 El único proveedor de identidad disponible es `simulated`: sin SSO real y sin envío de correo. Para pruebas locales, habilitar `IDENTITY_SIMULATOR_EXPOSE_CODE=true` y reiniciar la API; la respuesta incluye `simulation_code` y la pantalla avisa que es simulación. Deshabilitado, no existe otro canal implementado para recibir el código. No habilitar exposición como autenticación de producción. No se recoge DNI. Aceptar los nombres de pago `culqi`/`niubiz` en configuración no implementa esos adaptadores.
 
-El comando `npm run migrate --prefix server` aplica las migraciones pendientes hasta 022, en orden:
+El comando `npm run migrate --prefix server` aplica las migraciones pendientes hasta 030, en orden:
 
 Recuperación excepcional de una base manual local: si `ranti_db` tiene las tablas iniciales, el historial `schema_migrations` vacío y valores ENUM con tildes mal codificadas, no recrear tablas ni marcar migraciones arbitrariamente. Tras respaldar la base configurada, desde `server/` se puede ejecutar `node ../tools/repair-manual-baseline.mjs --backup-confirmed`. Esta herramienta solo admite desarrollo local `ranti_db`, los bytes conocidos de 001 con su adición de outbox legado, el contrato histórico completo y la columna opcional `career VARCHAR(100)` de 010. Corrige únicamente la codificación reconocida, valida todo el esquema y registra la base inicial en una transacción; cualquier deriva desconocida revierte la reparación. Después aplica las migraciones pendientes por el runner normal. No modifica contraseñas ni reglas de autenticación, no borra datos y no sustituye las validaciones del arranque. Si cambia `.env` después de un fallo de arranque, detener y volver a ejecutar `npm run dev` desde la raíz.
 
@@ -61,6 +63,20 @@ Con `NODE_ENV=development`, el servidor también aplica las migraciones pendient
 | `server/src/db/migrations/020_calendar_and_simulated_payment.sql` | Disponibilidad bilateral opcional de 30 minutos durante siete días; pago simulado separado de transacciones reales y posterior al encuentro acordado. |
 | `server/src/db/migrations/021_chat_calendar_invitations.sql` | Mensajes tipados de invitación al calendario, vinculados a un trato aceptado de la misma conversación. |
 | `server/src/db/migrations/022_chat_workflow_events.sql` | Avisos del flujo en el historial privado del chat, vinculados a la operación y deduplicados. |
+| `server/src/db/migrations/023_operation_finance.sql` | Cotizaciones económicas, estados de pago y transferencia separados, eventos deduplicados y conciliación de pérdidas. |
+| `server/src/db/migrations/024_immutable_finance_quotes.sql` | Desglose económico inmutable y consistencia entre cotización, pago y operación. |
+| `server/src/db/migrations/025_guarantee_requirement.sql` | Garantía obligatoria o referencial y versionado de esa condición contractual. |
+| `server/src/db/migrations/026_incidence_waiting_status.sql` | Estado de espera de respuesta de una incidencia. |
+| `server/src/db/migrations/027_operation_incidence_workflow.sql` | Seguimiento privado, evidencias, vínculos con chat y bloqueos de cierre/desembolso. |
+| `server/src/db/migrations/028_incidence_administrative_cancellation.sql` | Atribución explícita de cancelaciones por resolución administrativa. |
+| `server/src/db/migrations/029_incidence_cancellation_integrity.sql` | Consistencia del actor de la cancelación. |
+| `server/src/db/migrations/030_closed_operation_reviews.sql` | Evaluación única por participante, reputación por rol y reseñas de producto independientes. |
+
+Consulta [Operaciones, pagos y constancias](docs/operation-finance.md) para la política económica, configuración externa de Culqi sandbox, límites y pruebas paso a paso. No están habilitados los cobros ni las transferencias reales.
+
+Consulta [Comunicación e incidencias de operaciones](docs/operation-incidences.md) para reportes, evidencias privadas, revisión administrativa, bloqueos financieros, plazo posterior al cierre y pruebas por rol.
+
+Consulta [Evaluaciones de operaciones cerradas](docs/operation-reviews.md) para reputación por rol, puntuación propia oculta, publicación diferida y prueba con dos usuarios.
 
 Consulta [Chat, disponibilidad y entrega del piloto](docs/pilot-communications.md) para reglas, límites y pruebas. El chat se abre desde «Consultar al oferente», «Abrir chat de esta operación» o el menú de cuenta → «Mis conversaciones».
 

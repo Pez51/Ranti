@@ -10,7 +10,8 @@ const termsInvalid = () => new AppError({ status: 422, code: 'OPERATION_TERMS_IN
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const uuid = z.uuid();
 const requestKeys = new Set(['publication_id', 'requested_price', 'requested_guarantee_amount',
-  'requested_contract_version','requested_rental_unit', 'offered_price', 'start_date', 'end_date']);
+  'requested_contract_version','requested_rental_unit', 'offered_price', 'start_date', 'end_date',
+  'request_message','requested_meeting_at','requested_meeting_location']);
 const date = value => { try { return dateValue(value); } catch { throw invalid(); } };
 const amount = value => { try { return money(value).text; } catch { throw invalid(); } };
 
@@ -42,6 +43,15 @@ export function parseOperationRequest(input) {
   if (Object.hasOwn(input, 'offered_price')) result.offered_price = amount(input.offered_price);
   if (Object.hasOwn(input, 'start_date')) result.start_date = date(input.start_date);
   if (Object.hasOwn(input, 'end_date')) result.end_date = date(input.end_date);
+  if (Object.hasOwn(input, 'request_message')) result.request_message = reason(input.request_message);
+  const hasMeeting = Object.hasOwn(input, 'requested_meeting_at');
+  if (hasMeeting !== Object.hasOwn(input, 'requested_meeting_location')) throw invalid();
+  if (hasMeeting) {
+    const location = z.string().trim().min(3).max(200).safeParse(input.requested_meeting_location);
+    if (!location.success || !z.iso.datetime({offset:true}).safeParse(input.requested_meeting_at).success) throw invalid();
+    result.requested_meeting_location = location.data;
+    result.requested_meeting_at = date(input.requested_meeting_at);
+  }
   return result;
 }
 
@@ -109,9 +119,11 @@ export function buildContractSnapshot(publication, operation, acceptedAt) {
   return {
     publication_id: publication.id, contract_version: publication.contract_version,
     title: publication.title, description: publication.description, category: publication.category,
+    ...(publication.accessories?{accessories:publication.accessories}:{}),
     condition: publication.condition, modality: publication.modality,
     ...(publication.modality==='Alquiler'?{rental_unit:publication.rental_unit||'day'}:{}),
     agreed_price: amount(operation.offered_price ?? publication.price ?? 0), guarantee_amount: amount(publication.guarantee_amount ?? 0),
+    guarantee_required: publication.modality !== 'Venta' && publication.guarantee_required === true,
     ...(operation.offered_price != null ? { published_price: amount(operation.requested_price), offer_accepted: true } : {}),
     start_date: operation.start_date == null ? null : instant(operation.start_date).toISOString(),
     end_date: operation.end_date == null ? null : instant(operation.end_date).toISOString(),
@@ -187,13 +199,14 @@ function pick(source, fields) {
   if (!isObject(source)) return null;
   return Object.fromEntries(fields.filter(field => Object.hasOwn(source, field)).map(field => [field, source[field]]));
 }
-const snapshotFields = ['publication_id', 'contract_version', 'title', 'description', 'category', 'condition',
-  'modality','rental_unit', 'agreed_price', 'published_price', 'offer_accepted', 'guarantee_amount', 'start_date', 'end_date', 'demandante_id', 'oferente_id', 'accepted_at'];
+const snapshotFields = ['publication_id', 'contract_version', 'title', 'description', 'accessories', 'category', 'condition',
+  'modality','rental_unit', 'agreed_price', 'published_price', 'offer_accepted', 'guarantee_amount', 'guarantee_required', 'start_date', 'end_date', 'demandante_id', 'oferente_id', 'accepted_at'];
 const operationFields = ['id', 'publication_id', 'modality', 'status', 'start_date', 'end_date',
   'requested_price','offered_price','requested_rental_unit', 'requested_guarantee_amount', 'requested_contract_version', 'request_expires_at',
+  'request_message','requested_meeting_at','requested_meeting_location',
   'accepted_at', 'decided_at', 'cancelled_at', 'decision_reason', 'cancellation_reason', 'created_at', 'updated_at'];
-const publicationFields = ['id', 'title', 'primary_image', 'contract_version'];
-const counterpartFields = ['id', 'display_name', 'reputation_score', 'operations_count'];
+const publicationFields = ['id', 'title', 'primary_image', 'contract_version', 'guarantee_required'];
+const counterpartFields = ['id', 'display_name', 'operations_count'];
 
 export function publicOperation(row, viewerId) {
   if (!isObject(row) || (viewerId !== row.demandante_id && viewerId !== row.oferente_id)) throw missing();

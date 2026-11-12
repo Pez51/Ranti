@@ -6,6 +6,7 @@ import { enqueueOutboxEvent } from '../outbox/outbox.repository.js';
 import { dateValue, evaluatePublicationRisk } from './risk.policy.js';
 import { publicationImageReference } from './publication-photo.js';
 import { provenanceReference,requireOwnedProvenance } from './provenance-files.js';
+import { createInAppNotification } from '../../controllers/notification.controller.js';
 
 const error = (status, code, message) => new AppError({ status, code, message });
 const invalid = () => error(400, 'INVALID_INPUT', 'Datos inválidos.');
@@ -33,19 +34,22 @@ async function administrator(client, id) {
 }
 
 export async function listPendingPublicationReviews(db, adminId, page = {}) {
-  if (!object(page) || Object.keys(page).some(key => !['limit', 'offset'].includes(key))) throw invalid();
+  if (!object(page) || Object.keys(page).some(key => !['limit', 'offset', 'risk', 'search'].includes(key))) throw invalid();
   const limit = page.limit === undefined ? 20 : Number(page.limit);
   const offset = page.offset === undefined ? 0 : Number(page.offset);
   if ((page.limit !== undefined && !/^\d+$/.test(String(page.limit))) ||
       (page.offset !== undefined && !/^\d+$/.test(String(page.offset))) ||
       !Number.isInteger(limit) || limit < 1 || limit > 100 ||
-      !Number.isInteger(offset) || offset < 0 || offset > 100000) throw invalid();
+      !Number.isInteger(offset) || offset < 0 || offset > 100000 ||
+      (page.risk!==undefined&&!/^[123]$/.test(page.risk)) ||
+      (page.search!==undefined&&(typeof page.search!=='string'||page.search.length>100))) throw invalid();
   return transaction(db, async client => {
     await administrator(client, adminId);
     const { rows } = await client.query(`SELECT p.*, COALESCE((SELECT json_agg(image_url ORDER BY position)
       FROM publication_images WHERE publication_id=p.id), '[]'::json) AS images
-      FROM publications p WHERE status='Pendiente de revisión'
-      ORDER BY submitted_at, id LIMIT $1 OFFSET $2`, [limit, offset]);
+      FROM publications p WHERE status='Pendiente de revisión' AND ($3::integer IS NULL OR p.risk_level=$3)
+      AND ($4::text IS NULL OR position(lower($4) in lower(p.title))>0)
+      ORDER BY risk_level DESC NULLS LAST, submitted_at, id LIMIT $1 OFFSET $2`, [limit, offset,page.risk??null,page.search?.trim()||null]);
     for (const row of rows) if (row.provenance_evidence_ref) await appendAudit(client, {
       actorId: adminId, action: 'publication.evidence.viewed', entityType: 'publication', entityId: row.id,
       metadata: { source: 'admin-publication-review-queue' },
@@ -57,7 +61,7 @@ export async function listPendingPublicationReviews(db, adminId, page = {}) {
 export async function decidePublicationReview(db, adminId, id, input) {
   uuid(id);
   if (!object(input) || Object.keys(input).some(key => !['decision', 'reason', 'submittedAt'].includes(key)) ||
-      !['approve', 'reject'].includes(input.decision) || typeof input.reason !== 'string' ||
+      !['approve', 'observe', 'reject'].includes(input.decision) || typeof input.reason !== 'string' ||
       !input.reason.trim() || input.reason.trim().length > 500 || typeof input.submittedAt !== 'string' ||
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(input.submittedAt)) throw invalid();
   try { dateValue(input.submittedAt); } catch { throw invalid(); }
@@ -69,9 +73,10 @@ export async function decidePublicationReview(db, adminId, id, input) {
     const target = input.decision === 'approve' ? 'Activa' : 'Borrador';
     const reason = input.reason.trim();
     const publicDecision = row => Object.fromEntries(['id', 'status', 'submitted_at', 'reviewed_by',
-      'review_reason', 'reviewed_at', 'published_at', 'risk_level', 'risk_policy_version'].map(key => [key, row[key]]));
+      'review_reason', 'review_outcome', 'reviewed_at', 'published_at', 'risk_level', 'risk_policy_version'].map(key => [key, row[key]]));
     if (before.status !== 'Pendiente de revisión') {
-      if (before.status === target && before.reviewed_at && before.reviewed_by === adminId && before.review_reason === reason)
+      if (before.status === target && before.reviewed_at && before.reviewed_by === adminId && before.review_reason === reason &&
+        (before.review_outcome===input.decision||!before.review_outcome&&input.decision!=='observe'))
         return publicDecision(before);
       throw conflict();
     }
@@ -91,15 +96,18 @@ export async function decidePublicationReview(db, adminId, id, input) {
     }
     const updated = (await client.query(`UPDATE publications SET status=$2::publication_status, reviewed_by=$3, review_reason=$4,
       reviewed_at=clock_timestamp(), published_at=CASE WHEN $2::publication_status='Activa' THEN clock_timestamp() ELSE NULL END,
-      risk_level=$5, risk_policy_version=$6, updated_at=clock_timestamp() WHERE id=$1 RETURNING *`,
-    [id, target, adminId, reason, risk?.level ?? before.risk_level, risk?.policyVersion ?? before.risk_policy_version])).rows[0];
-    const summary = row => ({ status: row.status, risk_level: row.risk_level, risk_policy_version: row.risk_policy_version });
+      risk_level=$5, risk_policy_version=$6, review_outcome=$7, updated_at=clock_timestamp() WHERE id=$1 RETURNING *`,
+    [id, target, adminId, reason, risk?.level ?? before.risk_level, risk?.policyVersion ?? before.risk_policy_version,input.decision])).rows[0];
+    const summary = row => ({ status: row.status, risk_level: row.risk_level, risk_policy_version: row.risk_policy_version, outcome:row.review_outcome });
     const action = `publication.review-${input.decision}`;
     await appendAudit(client, { actorId: adminId, action, entityType: 'publication', entityId: id,
       oldValues: summary(before), newValues: summary(updated) });
     await enqueueOutboxEvent(client, { aggregateType: 'publication', aggregateId: id, eventType: action,
       payload: { publicationId: id, ownerId: before.owner_id, ...summary(updated) },
       deduplicationKey: `${action}:${id}:${input.submittedAt}` });
+    await createInAppNotification(client,{userId:before.owner_id,type:'Alerta',referenceId:id,
+      title:input.decision==='approve'?'Publicación aprobada':input.decision==='observe'?'Publicación observada':'Publicación rechazada',
+      message:'Consulta la decisión y su motivo en Mis publicaciones.'});
     return publicDecision(updated);
   });
 }

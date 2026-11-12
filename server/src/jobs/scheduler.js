@@ -13,15 +13,14 @@ export const startCronJobs = () => {
     }
   });
 
-  // Se ejecuta cada hora en el minuto 0 (ej. 1:00, 2:00) para limpiar reservas caducadas
-  cron.schedule('0 * * * *', async () => {
+  cron.schedule('* * * * *', async () => {
     try {
       console.log('⏳ [CRON] Limpiando operaciones expiradas...');
       await expireOldOperations();
     } catch (error) {
       console.error('❌ [CRON Error] Fallo en expireOldOperations:', error.message);
     }
-  });
+  }, { noOverlap: true });
 
   console.log('⏰ Trabajos en segundo plano (Cron Jobs) inicializados correctamente.');
 };

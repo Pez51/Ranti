@@ -14,10 +14,12 @@ export async function simulatePayment(db,id,actor,input){
     if(!reference)throw new AppError({status:404,code:'OPERATION_NOT_FOUND',message:'Operación no encontrada.'});
     await c.query('SELECT id FROM publications WHERE id=$1 FOR UPDATE',[reference.publication_id]);
     let op=(await c.query('SELECT * FROM operations WHERE id=$1 FOR UPDATE',[id])).rows[0];
+    if(op.contract_snapshot?.workflow_payment)throw new AppError({status:409,code:'PAYMENT_SIMULATION_INVALID',message:'Continúa en la pantalla de pago de esta operación.',details:null});
     const users=(await c.query('SELECT * FROM users WHERE id=ANY($1::uuid[]) ORDER BY id FOR NO KEY UPDATE',[[op.demandante_id,op.oferente_id]])).rows;users.forEach(requireCurrentUser);
     const h=(await c.query('SELECT * FROM operation_handoffs WHERE operation_id=$1',[id])).rows[0];
     if(!h?.agreed_by||h.change_requested||!['Pendiente de pago/garantía','Lista para entrega'].includes(op.status))throw new AppError({status:409,code:'PAYMENT_SIMULATION_INVALID',message:'Primero ambos deben acordar lugar y horario. El calendario puede omitirse, el acuerdo no.'});
     if((await c.query('SELECT id FROM transactions WHERE operation_id=$1 LIMIT 1',[id])).rowCount)throw new AppError({status:409,code:'PAYMENT_SIMULATION_INVALID',message:'Una operación económica no puede simularse por este flujo.'});
+    if((await c.query('SELECT id FROM operation_finance_payments WHERE operation_id=$1',[id])).rowCount)throw new AppError({status:409,code:'PAYMENT_SIMULATION_INVALID',message:'Este trato ya tiene un intento económico. Consulta pagos y constancias para no duplicarlo.'});
     const quote=simulationQuote(op);
     const existing=(await c.query('SELECT operation_id FROM operation_payment_simulations WHERE operation_id=$1',[id])).rowCount;
     if(!existing){

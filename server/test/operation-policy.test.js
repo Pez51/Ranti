@@ -102,7 +102,7 @@ describe('decisions, transitions, snapshots and projections', () => {
     expect(buildContractSnapshot(sale, pending, now)).toEqual({
       publication_id: publicationId, contract_version: 3, title: 'Laptop', description: 'Equipo original',
       category: 'Tecnología', condition: 'Usado', modality: 'Venta', agreed_price: '25.00',
-      guarantee_amount: '0.00', start_date: null, end_date: null,
+      guarantee_amount: '0.00', guarantee_required: false, start_date: null, end_date: null,
       demandante_id: requester, oferente_id: owner, accepted_at: now.toISOString(),
     });
   });
@@ -165,7 +165,7 @@ describe('decisions, transitions, snapshots and projections', () => {
     };
     const projected = publicOperation(row, requester);
     expect(projected.publication).toEqual({ id: publicationId, title: 'Laptop', primary_image: 'https://example.org/p.png', contract_version: 3 });
-    expect(projected.counterpart).toEqual({ id: owner, display_name: 'Oferente', reputation_score: '4.5', operations_count: 2 });
+    expect(projected.counterpart).toEqual({ id: owner, display_name: 'Oferente', operations_count: 2 });
     expect(projected.contract_snapshot).not.toHaveProperty('otp');
     expect(projected.allowed_actions).toContain('cancel');
     expect(JSON.stringify(projected)).not.toMatch(/otp|secret|evidence|worker|email/);

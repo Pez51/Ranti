@@ -7,6 +7,7 @@ export async function appendConversationEvent(c,op,actor,{type,key,body}){
   await c.query(`INSERT INTO publication_conversations(publication_id,owner_id,requester_id)
     VALUES($1,$2,$3) ON CONFLICT(publication_id,requester_id) DO NOTHING`,[op.publication_id,op.oferente_id,op.demandante_id]);
   const chat=(await c.query('SELECT id FROM publication_conversations WHERE publication_id=$1 AND requester_id=$2 FOR UPDATE',[op.publication_id,op.demandante_id])).rows[0];
+  await c.query('INSERT INTO operation_conversation_links(operation_id,conversation_id) VALUES($1,$2) ON CONFLICT(operation_id) DO NOTHING',[op.id,chat.id]);
   const message=(await c.query(`INSERT INTO conversation_messages(conversation_id,sender_id,client_id,body,kind,operation_id,event_type,event_key)
     VALUES($1,$2,$3,$4,'workflow_event',$5,$6,$7) ON CONFLICT(operation_id,event_key) WHERE kind='workflow_event' DO NOTHING RETURNING id`,
     [chat.id,actor,randomUUID(),body,op.id,type,key])).rows[0];

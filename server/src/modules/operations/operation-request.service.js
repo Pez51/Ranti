@@ -5,6 +5,9 @@ import { parseOperationRequest,validateRequestedTerms,publicOperation,parseDecis
 import { publicationPricing } from '../publications/publication-pricing.js';
 import { z } from 'zod';
 import { handoffProjection } from './handoff.policy.js';
+import { readPaymentProfile } from '../users/payment-profile.service.js';
+import { findReturnSettlement, returnSettlementView } from './return-settlement.js';
+import { paymentDeadline, paymentDeadlinePassed } from './workflow-timing.js';
 import { simulationQuote } from './payment-simulation.policy.js';
 import { appendAudit } from '../audit/audit.repository.js';
 import { enqueueOutboxEvent } from '../outbox/outbox.repository.js';
@@ -18,23 +21,34 @@ async function transaction(db,work){
   finally{client.release(releaseError);}
 }
 export async function projectOperation(client,row,viewer){
-  const publication=(await client.query(`SELECT p.id,p.title,p.contract_version,(SELECT image_url FROM publication_images WHERE publication_id=p.id ORDER BY position LIMIT 1) AS primary_image FROM publications p WHERE id=$1`,[row.publication_id])).rows[0];
-  const users=(await client.query('SELECT id,display_name,reputation_score,operations_count FROM users WHERE id=ANY($1::uuid[])',[[row.demandante_id,row.oferente_id]])).rows;
+  const publication=(await client.query(`SELECT p.id,p.title,p.contract_version,p.guarantee_required,(SELECT image_url FROM publication_images WHERE publication_id=p.id ORDER BY position LIMIT 1) AS primary_image FROM publications p WHERE id=$1`,[row.publication_id])).rows[0];
+  const users=(await client.query('SELECT id,display_name,operations_count FROM users WHERE id=ANY($1::uuid[])',[[row.demandante_id,row.oferente_id]])).rows;
   const operation = publicOperation({...row,publication,owner:users.find(u=>u.id===row.oferente_id),requester:users.find(u=>u.id===row.demandante_id)},viewer);
+  const pendingIncidences=(await client.query("SELECT count(*)::int AS total FROM incidences WHERE operation_id=$1 AND status NOT IN ('Resuelta','Desestimada')",[row.id])).rows[0].total;
   const handoff=(await client.query('SELECT * FROM operation_handoffs WHERE operation_id=$1',[row.id])).rows[0];
-  operation.handoff=handoffProjection(handoff,row,viewer);
+  const hasReturnWorkflow=row.modality==='Alquiler'&&row.contract_snapshot?.workflow_payment;
   const payment=(await client.query('SELECT amount,unit_count,created_at FROM operation_payment_simulations WHERE operation_id=$1',[row.id])).rows[0];
-  if(row.accepted_at) {
-    operation.payment_simulation=payment?{...payment,simulated:true,completed:true,guarantee_held:false}:null;
-    // The owner never sees buyer payment instruments or processor charges.
-    if(viewer===row.demandante_id&&handoff?.agreed_by&&!handoff.change_requested) operation.payment_quote=simulationQuote(row);
-  }
-  if(handoff?.owner_delivered_at||handoff?.requester_received_at) operation.allowed_actions=[];
-  if (row.offered_price != null && viewer === row.oferente_id) {
-    operation.offer_pricing = row.contract_snapshot?.pricing ?? publicationPricing({ modality: row.modality, price: row.offered_price,
-      guarantee_amount: row.requested_guarantee_amount, rental_unit: row.requested_rental_unit }).owner;
-  }
-  return operation;
+  const owner=viewer===row.oferente_id;
+  const returnOverdue=Boolean(hasReturnWorkflow&&row.status==='Entregada/Activa'&&!handoff?.requester_returned_at&&row.end_date<=new Date());
+  const overdueCase=returnOverdue?(await client.query(`SELECT id FROM incidences WHERE operation_id=$1 AND type='late_return'
+    ORDER BY (status IN ('Resuelta','Desestimada')),created_at DESC LIMIT 1`,[row.id])).rows[0]:null;
+  return {
+    ...operation,
+    finance_enabled:['Venta','Alquiler'].includes(row.modality),
+    is_owner:owner,
+    pending_incidence_count:pendingIncidences,
+    handoff:handoffProjection(handoff,row,viewer),
+    payment_expires_at:row.payment_expires_at??null,
+    expiry_reason:row.status==='Expirada'?(row.payment_expired_at?'payment_deadline_expired':'request_expired'):null,
+    return_overdue:returnOverdue,
+    overdue_case_id:overdueCase?.id??null,
+    ...(hasReturnWorkflow?{return_settlement:returnSettlementView(await findReturnSettlement(client,row.id),row,viewer)}:{}),
+    ...(row.accepted_at?{payment_simulation:payment?{...payment,simulated:true,completed:true,guarantee_held:false}:null}:{}),
+    ...(row.accepted_at&&viewer===row.demandante_id&&handoff?.agreed_by&&!handoff.change_requested?{payment_quote:simulationQuote(row)}:{}),
+    ...(pendingIncidences||handoff?.owner_delivered_at||handoff?.requester_received_at?{allowed_actions:[]}:{}),
+    ...(row.offered_price!=null&&owner?{offer_pricing:row.contract_snapshot?.pricing??publicationPricing({modality:row.modality,
+      price:row.offered_price,guarantee_amount:row.requested_guarantee_amount,rental_unit:row.requested_rental_unit}).owner}:{}),
+  };
 }
 const project=projectOperation;
 export async function requestOperation(db,input,requesterId){
@@ -49,20 +63,42 @@ export async function requestOperation(db,input,requesterId){
       if(error.code==='OPERATION_TERMS_INVALID')error.message='La publicación o sus condiciones ya no están disponibles. Actualiza la página y comprueba el precio, la versión y las fechas.';
       throw error;
     }
+    if(terms.requested_meeting_at&&(terms.requested_meeting_at<=now||
+      terms.requested_meeting_at.getTime()>now.getTime()+366*86400000||
+      (terms.start_date&&terms.requested_meeting_at>=terms.start_date))){
+      throw new AppError({status:422,code:'OPERATION_TERMS_INVALID',
+        message:'Propón un encuentro futuro y, cuando corresponda, anterior al inicio del alquiler o préstamo.',details:null});
+    }
+    const sellerProfile=publication.modality==='Préstamo'?null:await readPaymentProfile(client,publication.owner_id);
+    if(sellerProfile?.payout&&!sellerProfile.owner_ready){
+      throw new AppError({status:409,code:'PAYOUT_SETUP_REQUIRED',
+        message:'El oferente debe verificar su destino y habilitar los medios de pago antes de recibir solicitudes.',details:null});
+    }
+    if(sellerProfile?.owner_ready&&!(await readPaymentProfile(client,requesterId)).buyer_method){
+      throw new AppError({status:409,code:'BUYER_PAYMENT_SETUP_REQUIRED',
+        message:'Configura tu método de pago de prueba antes de solicitar.',details:null});
+    }
     const reserved=await client.query(`SELECT id FROM reservations WHERE publication_id=$1 AND status IN('Bloqueo Provisional','Reservada/Bloqueada','Activa/En uso')
       AND ($2::timestamptz IS NULL OR start_date IS NULL OR(status='Activa/En uso' AND end_date<=clock_timestamp()) OR(start_date<$3::timestamptz AND end_date>$2::timestamptz)) LIMIT 1`,[publication.id,terms.start_date||null,terms.end_date||null]);
     if(reserved.rowCount)throw new AppError({status:409,code:'OPERATION_CONFLICT',message:'El artículo ya está reservado para esas condiciones.'});
     const existing=(await client.query(`SELECT * FROM operations WHERE publication_id=$1 AND demandante_id=$2 AND status='Pendiente'
       AND request_expires_at>$3 AND requested_contract_version=$4 AND requested_price=$5 AND requested_guarantee_amount=$6
       AND start_date IS NOT DISTINCT FROM $7::timestamptz AND end_date IS NOT DISTINCT FROM $8::timestamptz
-      AND requested_rental_unit IS NOT DISTINCT FROM $9::text AND offered_price IS NOT DISTINCT FROM $10::numeric ORDER BY id LIMIT 1`,
-      [publication.id,requesterId,now,terms.requested_contract_version,terms.requested_price,terms.requested_guarantee_amount,terms.start_date||null,terms.end_date||null,publication.modality==='Alquiler'?publication.rental_unit:null,terms.offered_price??null])).rows[0];
+      AND requested_rental_unit IS NOT DISTINCT FROM $9::text AND offered_price IS NOT DISTINCT FROM $10::numeric
+      AND request_message IS NOT DISTINCT FROM $11::text AND requested_meeting_at IS NOT DISTINCT FROM $12::timestamptz
+      AND requested_meeting_location IS NOT DISTINCT FROM $13::text ORDER BY id LIMIT 1`,
+      [publication.id,requesterId,now,terms.requested_contract_version,terms.requested_price,terms.requested_guarantee_amount,
+        terms.start_date||null,terms.end_date||null,publication.modality==='Alquiler'?publication.rental_unit:null,
+        terms.offered_price??null,terms.request_message??null,terms.requested_meeting_at??null,terms.requested_meeting_location??null])).rows[0];
     if(existing)return {operation:await project(client,existing,requesterId)};
     const operation=(await client.query(`INSERT INTO operations(publication_id,demandante_id,oferente_id,modality,status,start_date,end_date,
-      requested_price,requested_guarantee_amount,requested_contract_version,request_expires_at,requested_rental_unit,offered_price)
-      VALUES($1,$2,$3,$4,'Pendiente',$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      requested_price,requested_guarantee_amount,requested_contract_version,request_expires_at,requested_rental_unit,offered_price,
+      request_message,requested_meeting_at,requested_meeting_location)
+      VALUES($1,$2,$3,$4,'Pendiente',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [publication.id,requesterId,publication.owner_id,publication.modality,terms.start_date||null,terms.end_date||null,terms.requested_price,terms.requested_guarantee_amount,
-        terms.requested_contract_version,new Date(now.getTime()+Number(env.OPERATION_REQUEST_TTL_HOURS)*3600000),publication.modality==='Alquiler'?publication.rental_unit:null,terms.offered_price??null])).rows[0];
+        terms.requested_contract_version,new Date(now.getTime()+Number(env.OPERATION_REQUEST_TTL_HOURS)*3600000),
+        publication.modality==='Alquiler'?publication.rental_unit:null,terms.offered_price??null,
+        terms.request_message??null,terms.requested_meeting_at??null,terms.requested_meeting_location??null])).rows[0];
     await appendAudit(client,{actorId:requesterId,action:'operation.requested',entityType:'operation',entityId:operation.id,newValues:{status:'Pendiente',publication_id:publication.id,...(terms.offered_price?{offered_price:terms.offered_price}:{})}});
     await enqueueOutboxEvent(client,{aggregateType:'operation',aggregateId:operation.id,eventType:'operation.requested',payload:{operationId:operation.id,ownerId:publication.owner_id,requesterId},deduplicationKey:`operation.requested:${operation.id}`});
     return {operation:await project(client,operation,requesterId)};
@@ -97,12 +133,14 @@ export async function decideOperation(db, id, actorId, input) {
     if (!reference) throw missing();
     const publication = (await client.query('SELECT * FROM publications WHERE id=$1 FOR UPDATE', [reference.publication_id])).rows[0];
     const row = (await client.query('SELECT * FROM operations WHERE id=$1 FOR UPDATE', [id])).rows[0];
+    if(['cancel','reject'].includes(decision.decision)&&(await client.query("SELECT id FROM incidences WHERE operation_id=$1 AND status NOT IN ('Resuelta','Desestimada') LIMIT 1",[id])).rowCount)throw new AppError({status:409,code:'INCIDENCE_PENDING',message:'Hay una incidencia pendiente; administración debe resolverla antes de cancelar, rechazar o cerrar.'});
     const users = (await client.query('SELECT * FROM users WHERE id=ANY($1::uuid[]) ORDER BY id FOR NO KEY UPDATE', [[row.demandante_id, row.oferente_id]])).rows;
     requireCurrentUser(users.find(user => user.id === actorId));
     if (decision.decision === 'accept') {
       users.forEach(requireCurrentUser);
     }
     const now = (await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
+    if(decision.decision==='cancel'&&(await client.query("SELECT id FROM operation_finance_payments WHERE operation_id=$1 AND superseded_at IS NULL AND status<>'failed' LIMIT 1",[id])).rowCount)throw new AppError({status:409,code:'OPERATION_CONFLICT',message:'Existe un pago de prueba pendiente o confirmado. Abre un caso para revisar la cancelación.'});
     if(decision.decision==='cancel' && (await client.query('SELECT operation_id FROM operation_handoffs WHERE operation_id=$1 AND (owner_delivered_at IS NOT NULL OR requester_received_at IS NOT NULL)',[id])).rowCount) {
       throw new AppError({status:409,code:'OPERATION_CONFLICT',message:'Ya se declaró una entrega. No se puede liberar el artículo mediante cancelación; revisa la entrega con la otra persona.'});
     }
@@ -122,10 +160,30 @@ export async function decideOperation(db, id, actorId, input) {
       reservationConflict: reserved.rowCount > 0, hasEconomicMovement: movements.rowCount > 0 });
     let updated;
     if (decision.decision === 'accept') {
-      const snapshot = buildContractSnapshot(publication, row, now);
-      if (row.offered_price != null) snapshot.pricing = publicationPricing({ ...publication, price: row.offered_price }).owner;
-      updated = (await client.query(`UPDATE operations SET status='Aceptada',contract_snapshot=$2,accepted_at=$3,decided_at=$3,decided_by=$4,updated_at=$3 WHERE id=$1 RETURNING *`,
-        [id, snapshot, now, actorId])).rows[0];
+      const paymentProfile = row.modality !== 'Préstamo' ? await readPaymentProfile(client, row.oferente_id) : null;
+      if(paymentProfile?.payout&&!paymentProfile.owner_ready)throw new AppError({status:409,code:'PAYOUT_SETUP_REQUIRED',
+        message:'Verifica el destino de cobro y los medios aceptados antes de confirmar el trato.',details:null});
+      const snapshot = {
+        ...buildContractSnapshot(publication, row, now),
+        pricing: publicationPricing({ ...publication, price: row.offered_price ?? publication.price }).owner,
+        ...(paymentProfile?.owner_ready ? {
+          workflow_payment: {
+            accepted_methods: paymentProfile.accepted_methods,
+            payout: paymentProfile.payout,
+          },
+        } : {}),
+      };
+      const deadline=snapshot.workflow_payment?paymentDeadline(now,row):null;
+      if(paymentDeadlinePassed({payment_expires_at:deadline},now))throw new AppError({status:409,code:'OPERATION_CONFLICT',
+        message:'El alquiler ya comenzó. Solicita otras fechas.',details:null});
+      updated = (await client.query(`UPDATE operations SET status='Aceptada',contract_snapshot=$2,accepted_at=$3,
+        decided_at=$3,decided_by=$4,updated_at=$3,payment_expires_at=$5 WHERE id=$1 RETURNING *`,
+        [id, snapshot, now, actorId, deadline])).rows[0];
+      if(row.requested_meeting_at>now){
+        await client.query(`INSERT INTO operation_handoffs(operation_id,revision,proposed_by,meeting_at,location)
+          VALUES($1,1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+        [id,row.demandante_id,row.requested_meeting_at,row.requested_meeting_location]);
+      }
     } else if (decision.decision === 'reject') {
       updated = (await client.query(`UPDATE operations SET status='Rechazada',decided_at=$2,decided_by=$3,decision_reason=$4,updated_at=$2 WHERE id=$1 RETURNING *`,
         [id, now, actorId, decision.reason])).rows[0];

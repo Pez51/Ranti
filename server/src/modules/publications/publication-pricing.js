@@ -12,6 +12,7 @@ export function publicationPricing(publication){
     owner:{policy_version:'pilot-fee-v3-tiered-inclusive-igv',simulated:true,currency:'PEN',service_fee_percent:percent,
       modality:publication.modality,unit:publication.modality==='Alquiler'?({hour:'hora',day:'día',week:'semana',month:'mes (30 días)'}[publication.rental_unit||'day']):'operación',
       gross_amount:amount(gross),service_fee:amount(fee),owner_net:amount(gross-fee),
+      guarantee_required:publication.modality!=='Venta'&&publication.guarantee_required===true,
       guarantee_amount:money(loan||publication.modality==='Alquiler'?publication.guarantee_amount??0:0).text},
     platform:{net_service_income:amount(platformNet),included_service_tax:amount(fee-platformNet)},
   };

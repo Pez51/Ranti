@@ -17,6 +17,15 @@ const page = (items, offset = 0) => ({ items, limit: 20, offset });
 function setup() { render(<MemoryRouter><Operations /></MemoryRouter>); }
 beforeEach(() => { vi.resetAllMocks(); session(); });
 
+it('opens the linked operation from a chat notice with its incidence follow-up and correct participant direction',async()=>{
+  const operation={...base,is_owner:true,modality:'Alquiler',status:'Aceptada',allowed_actions:[]};
+  apiRequest.mockImplementation(path=>Promise.resolve(path==='/operations/op-1'?{operation}:path.endsWith('/incidences')?{items:[],policy:{allowed:false,post_close_days:7},effect:{money_notice:'Seguimiento del problema.'}}:page([])));
+  render(<MemoryRouter initialEntries={['/operaciones?operation=op-1']}><Operations/></MemoryRouter>);
+  expect(await screen.findByRole('button',{name:'Hablar con la otra persona'})).toBeInTheDocument();
+  expect(await screen.findByRole('heading',{name:'Problemas y seguimiento'})).toBeInTheDocument();
+  expect(screen.getByText('Recibida · Tu artículo')).toBeInTheDocument();
+});
+
 it.each([['Aceptar','accept'],['Rechazar','reject'],['Cancelar','cancel']])('renders %s confirmation beneath the selected request, not after the list',async(label,action)=>{
   const items=['Primera','Segunda','Tercera'].map((title,index)=>({...base,id:`op-${index}`,publication:{...base.publication,title},allowed_actions:[action]}));
   apiRequest.mockResolvedValueOnce(page(items));setup();
@@ -87,7 +96,7 @@ it('accepts only after confirmation and displays the server refreshed state', as
   fireEvent.click(screen.getByRole('button', { name: 'Confirmar aceptar' }));
   expect(await screen.findByText('Aceptada')).toBeInTheDocument();
   expect(apiRequest.mock.calls[2]).toEqual(['/operations/op-1/accept', expect.objectContaining({ token: 'real-token', method: 'POST' })]);
-  expect(apiRequest.mock.calls[3][0]).toBe('/operations/mine?side=received&limit=20&offset=0');
+  await waitFor(() => expect(apiRequest).toHaveBeenNthCalledWith(4, '/operations/mine?side=received&limit=20&offset=0', { token: 'real-token' }));
   expect(within(screen.getByRole('article', { name: /Calculadora/ })).getByText(/Reservado · Pendiente de entrega/)).toBeInTheDocument();
 });
 

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../lib/api';
 import { saveSession } from '../../lib/auth';
+import { returnDestination } from './graduate-accreditation';
 
 export default function Register() {
   const [email, setEmail] = useState('');
@@ -12,6 +13,7 @@ export default function Register() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
   const navigate = useNavigate();
+  const location = useLocation();
   async function request(action) {
     const address = email.trim().toLowerCase();
     setError('');
@@ -27,7 +29,7 @@ export default function Register() {
       if (action === 'confirm') {
         if (!result.token || !result.user) throw new Error('No se pudo iniciar la sesión.');
         saveSession({ token: result.token, user: result.user }, false);
-        navigate('/perfil', { replace: true });
+        navigate(returnDestination(location.state?.from), { replace: true });
       } else { setEmail(address); setPending(result); setPassword(''); setCode(''); }
     } catch (failure) { setError(failure.message); }
     finally { setBusy(''); }
@@ -58,6 +60,7 @@ export default function Register() {
     {error && <p role="alert">{error}</p>}
     <p>Un código incorrecto, expirado, ya usado o con intentos agotados puede producir el mismo mensaje del servidor. Solicita otro para continuar.</p>
     <button type="button" disabled={Boolean(busy)} onClick={() => request('resend')}>{busy === 'resend' ? 'Reenviando…' : 'Reenviar código'}</button>
-    <Link to="/login">Ya tengo cuenta: ingresar</Link>
+    <Link to="/login" state={location.state}>Ya tengo cuenta: ingresar</Link>
+    <Link to="/acreditacion?solicitar=1" state={location.state}>Registrar egreso con correo personal</Link>
   </section>;
 }

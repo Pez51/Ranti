@@ -31,7 +31,8 @@ function setup(data = { ...profile, avatar_url: null }) {
 
 it('shows profile data and saves only selected academic options', async () => {
   setup();
-  expect(await screen.findByText('4.20')).toBeInTheDocument();
+  expect(await screen.findByRole('heading',{name:'Comentarios recibidos'})).toBeInTheDocument();
+  expect(screen.queryByText('4.20')).not.toBeInTheDocument();
   expect(screen.getByText(profile.email)).toBeInTheDocument();
   change('Nombre visible', 'Ana María');
   click('Guardar perfil');

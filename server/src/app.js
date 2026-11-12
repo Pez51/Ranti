@@ -14,6 +14,11 @@ import notificationRoutes from './routes/notification.routes.js';
 import userRoutes, { adminRoutes } from './routes/user.routes.js';
 import conversationRoutes from './routes/conversation.routes.js';
 import adminConversationRoutes from './routes/admin-conversation.routes.js';
+import financeRoutes,{adminFinanceRoutes,financeEventRoutes} from './routes/finance.routes.js';
+import incidenceRoutes,{adminIncidenceRoutes} from './routes/incidence.routes.js';
+import reviewRoutes from './routes/review.routes.js';
+import privacyRoutes from './routes/privacy.routes.js';
+import auditRoutes from './routes/audit.routes.js';
 // (Se eliminó la importación duplicada de errorHandler que causaba el fallo)
 
 const app = express();
@@ -35,6 +40,7 @@ const limiter = rateLimit({
   message: 'Demasiadas peticiones desde esta IP, intenta de nuevo más tarde.'
 });
 app.use('/api', limiter);
+app.use('/api/privacy', privacyRoutes);
 
 // Parseo de JSON (necesario para leer req.body)
 app.use(express.json());
@@ -44,10 +50,17 @@ app.use(morgan('dev'));
 
 // Registro de Rutas Base
 app.use('/api/auth', authRoutes);
+app.use('/api', reviewRoutes);
 app.use('/api/publications', publicationRoutes);
-app.use('/api/operations', operationRoutes); 
+app.use('/api/operations', financeRoutes);
+app.use('/api/operations', operationRoutes);
+app.use('/api', incidenceRoutes);
+app.use('/api/admin/incidences', adminIncidenceRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/admin/conversations', adminConversationRoutes);
+app.use('/api/admin/finance', adminFinanceRoutes);
+app.use('/api/admin/audit', auditRoutes);
+app.use('/api/finance/events', financeEventRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);

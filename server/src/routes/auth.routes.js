@@ -1,6 +1,7 @@
 import express from 'express';
 import { register, login, resend, confirm } from '../controllers/auth.controller.js';
 import { requireAuth } from '../middlewares/auth.middleware.js';
+import graduateRoutes from './graduate-accreditation.routes.js';
 
 const router = express.Router();
 
@@ -9,6 +10,7 @@ router.post('/register', register);
 router.post('/verification/resend', resend);
 router.post('/verification/confirm', confirm);
 router.post('/login', login);
+router.use('/graduates', graduateRoutes);
 
 // Ruta de Prueba Privada (Ejemplo para verificar que el token funciona)
 router.get('/me', requireAuth, (req, res) => {

@@ -1,4 +1,6 @@
 import express from 'express';
+import pool from '../config/database.js';
+import { readPaymentProfile, savePaymentProfile } from '../modules/users/payment-profile.service.js';
 import { academicCatalog } from '../modules/users/academic-catalog.js';
 import { requireAuth, requireRole, requireVerifiedAccount } from '../middlewares/auth.middleware.js';
 import { getMe, patchMe, createRoleRequest, listMyRoleRequests,
@@ -9,6 +11,14 @@ userRoutes.get('/photos/:userId/:photoId', getPhoto);
 userRoutes.use(requireAuth, requireVerifiedAccount);
 userRoutes.get('/academic-catalog', (_req, res) => res.status(200).json(academicCatalog));
 userRoutes.get('/me', getMe);
+async function getPaymentProfile(req, res) {
+  res.set('Cache-Control', 'private, no-store').json(await readPaymentProfile(pool, req.user.id));
+}
+async function patchPaymentProfile(req, res) {
+  res.set('Cache-Control', 'private, no-store').json(await savePaymentProfile(pool, req.user.id, req.body));
+}
+userRoutes.get('/me/payment-profile', getPaymentProfile);
+userRoutes.patch('/me/payment-profile', patchPaymentProfile);
 userRoutes.get('/:id/profile',getMemberProfile);
 userRoutes.patch('/me', patchMe);
 userRoutes.put('/me/photo', express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '2mb' }), putMyPhoto);

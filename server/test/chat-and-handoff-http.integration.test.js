@@ -252,8 +252,13 @@ describe.skipIf(!enabled)('private conversations, availability and pilot handoff
     await db.query("UPDATE users SET display_name='Oferente de prueba',contact_number='999123456' WHERE id=$1",[owner]);
     const p=await publication();
     const publicPage=await request(app).get(`/api/publications/${p.id}`);
-    expect(publicPage.body.owner).toMatchObject({id:owner,display_name:'Oferente de prueba'});
+    expect(publicPage.body.owner).toMatchObject({id:owner,display_name:'Oferente d. p.'});
     expect(publicPage.body.owner).not.toHaveProperty('email');expect(publicPage.body.owner).not.toHaveProperty('contact_number');expect(publicPage.body).not.toHaveProperty('email');
+    const publicOfferer=await request(app).get(`/api/publications/${p.id}/offerer`);
+    expect(publicOfferer.status).toBe(200);
+    expect(publicOfferer.body).toMatchObject({display_name:'Oferente d. p.',reputation:expect.any(Object)});
+    expect(publicOfferer.body).not.toHaveProperty('email');
+    expect(publicOfferer.body).not.toHaveProperty('contact_number');
     expect((await request(app).get(`/api/users/${owner}/profile`)).status).toBe(401);
     const profile=await request(app).get(`/api/users/${owner}/profile`).set(auth(buyer));
     expect(profile.status,JSON.stringify(profile.body)).toBe(200);expect(profile.body).toMatchObject({id:owner,display_name:'Oferente de prueba',contact_number:'999123456',email:expect.stringMatching(/@ucsm.edu.pe$/)});

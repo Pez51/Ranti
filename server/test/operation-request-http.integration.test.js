@@ -20,6 +20,30 @@ describe.skipIf(!enabled)('operation request HTTP regression',()=>{
   }
   const terms=p=>({publication_id:p.id,requested_price:p.price,requested_guarantee_amount:p.guarantee_amount,requested_contract_version:Number(p.contract_version)});
   const offer = async (pub, value='4.00', user=buyer, dates={}) => request(app).post('/api/operations').set(auth(user)).send({...terms(pub),offered_price:value,...dates});
+  it('keeps the proposed meeting private and uses it to coordinate only after acceptance',async()=>{
+    const p=await publication('Alquiler');
+    const patch=await request(app).patch(`/api/publications/${p.id}`).set(auth(owner)).send({accessories:'Estuche y cargador'});
+    expect(patch.status,JSON.stringify(patch.body)).toBe(200);
+    expect(Number(patch.body.contract_version)).toBeGreaterThan(Number(p.contract_version));
+    await db.query("UPDATE publications SET status='Activa' WHERE id=$1",[p.id]);
+    const priced=await request(app).get('/api/publications?search=Art&category=Tecnolog%C3%ADa&condition=Buen%20estado&modality=Alquiler&max_price=5');
+    expect(priced.status).toBe(200);
+    expect(priced.body).toEqual(expect.arrayContaining([expect.objectContaining({id:p.id})]));
+    expect((await request(app).get('/api/publications?max_price=abc')).status).toBe(400);
+    const meeting=new Date(Date.now()+3600000).toISOString();
+    const body={...terms(patch.body),start_date:new Date(Date.now()+2*86400000).toISOString(),
+      end_date:new Date(Date.now()+3*86400000).toISOString(),requested_meeting_at:meeting,
+      requested_meeting_location:'Biblioteca UCSM',request_message:'Necesito el equipo para una práctica.'};
+    const created=await request(app).post('/api/operations').set(auth(buyer)).send(body);
+    expect(created.status,JSON.stringify(created.body)).toBe(201);
+    expect(created.body.operation).toMatchObject({request_message:body.request_message,requested_meeting_at:meeting});
+    expect(created.body.operation.handoff.meeting_at).toBeNull();
+    expect((await request(app).post('/api/operations').set(auth(buyer)).send(body)).body.operation.id).toBe(created.body.operation.id);
+    const accepted=await request(app).post(`/api/operations/${created.body.operation.id}/accept`).set(auth(owner)).send({});
+    expect(accepted.status,JSON.stringify(accepted.body)).toBe(200);
+    expect(accepted.body.operation).toMatchObject({handoff:{meeting_at:meeting,location:'Biblioteca UCSM',agreed:false},
+      contract_snapshot:{accessories:'Estuche y cargador'}});
+  });
   it('routes legacy acceptance, rejection and cancellation entry points through complete state transitions',async()=>{
     const legacy=await import('../src/modules/operations/operation.service.js');
     const create=async()=>request(app).post('/api/operations').set(auth(buyer)).send(terms(await publication()));

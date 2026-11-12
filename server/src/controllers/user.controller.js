@@ -11,7 +11,7 @@ export const getMe = async (req, res, next) => {
   try { res.status(200).json(await profileService.getOwnProfile(pool, req.user.id)); } catch (e) { next(e); }
 };
 export const getMemberProfile=async(req,res,next)=>{
-  try{res.set('Cache-Control','private, no-store').json(await profileService.getMemberProfile(pool,req.params.id));}catch(error){next(error);}
+  try{res.set('Cache-Control','private, no-store').json(await profileService.getMemberProfile(pool,req.params.id,req.user.id));}catch(error){next(error);}
 };
 export const patchMe = async (req, res, next) => {
   try { res.status(200).json(await profileService.updateOwnProfile(pool, req.user.id, req.body)); } catch (e) { next(e); }

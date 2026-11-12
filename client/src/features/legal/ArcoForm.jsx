@@ -1,91 +1,170 @@
-import { ShieldCheck, UserCheck, FileKey, XCircle, FileSignature } from 'lucide-react';
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ShieldCheck } from 'lucide-react';
+import { apiRequest } from '../../lib/api';
+import { getSession } from '../../lib/auth';
+import ArcoCase from './ArcoCase';
+import { arcoRights, encodeEvidence, formatDate, rightLabel } from './arco';
+
+const endpoint = '/privacy/requests';
+const fileTypes = 'application/pdf,image/jpeg,image/png,image/webp';
+
+function RequestFields({ existing = null }) {
+  return <>
+    <label>Datos sobre los que solicitas atención
+      <input name="dataScope" required maxLength={1000} defaultValue={existing?.dataScope} />
+    </label>
+    <label>{existing ? 'Describe la corrección' : 'Describe tu solicitud'}
+      <textarea name="description" required rows={4} maxLength={4000} defaultValue={existing?.description} />
+    </label>
+    <label>{existing ? 'Adjuntar nuevo sustento (opcional)' : 'Adjuntar sustento (opcional)'}
+      <input name="evidence" type="file" accept={fileTypes} />
+    </label>
+    <div className="text-sm text-gray-600">PDF hasta 5 MB. JPEG, PNG o WebP hasta 2 MB.</div>
+  </>;
+}
+
+async function requestFields(form) {
+  const fields = new FormData(form);
+  const attachment = await encodeEvidence(form.elements.evidence.files[0]);
+  return { fields, details: { dataScope: fields.get('dataScope'), description: fields.get('description'), attachment } };
+}
+
+function CorrectionForm({ item, token, onSaved }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function submit(event) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+      const { details } = await requestFields(event.currentTarget);
+      const updated = await apiRequest(`${endpoint}/${item.id}/corrections`, { token, method: 'POST',
+        body: JSON.stringify({ ...details, revision: item.revision }) });
+      onSaved(updated, 'Corrección registrada.');
+    } catch (failure) { setError(failure.message); }
+    finally { setBusy(false); }
+  }
+  return <form onSubmit={submit} className="border-t pt-3">
+    <h3>Subsanar solicitud</h3>
+    <fieldset disabled={busy}>
+      <RequestFields existing={item} />
+      <button type="submit">{busy ? 'Enviando…' : 'Enviar corrección'}</button>
+    </fieldset>
+    {error && <p role="alert">{error}</p>}
+  </form>;
+}
 
 export default function ArcoForm() {
-  const [arcoType, setArcoType] = useState('Acceso');
-  const navigate = useNavigate();
+  const session = getSession();
+  return <ArcoWorkspace key={session?.token} session={session} />;
+}
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    alert('Solicitud ARCO ingresada. El plazo de respuesta legal es de 10 a 20 días hábiles según el tipo de solicitud.');
-    navigate('/');
-  };
+function ArcoWorkspace({ session }) {
+  const token = session?.token;
+  const submissionId = useRef(null);
+  const [items, setItems] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [offset, setOffset] = useState(0);
+  const [nextOffset, setNextOffset] = useState(null);
+  const [listVersion, setListVersion] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [reading, setReading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [listError, setListError] = useState('');
+  const [notice, setNotice] = useState('');
 
-  return (
-    <div className="py-6 max-w-4xl mx-auto px-4">
-      <Link to="/" className="inline-block mb-6 text-ranti-ink font-bold hover:underline underline-offset-4 px-4 py-2 rounded-full transition-all">
-        ← Volver al inicio
-      </Link>
+  useEffect(() => {
+    const controller = new AbortController();
+    apiRequest(`${endpoint}?offset=${offset}`, { token, signal: controller.signal })
+      .then(result => {
+        if (!controller.signal.aborted) { setItems(result.items); setNextOffset(result.nextOffset ?? null); }
+      })
+      .catch(failure => { if (!controller.signal.aborted) setListError(failure.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [token, offset, listVersion]);
 
-      <div className="bg-white p-8 md:p-12 rounded-3xl border-4 border-ranti-ink shadow-solid">
-        <div className="mb-8 border-b-4 border-ranti-ink pb-6 flex items-center gap-4">
-          <div className="p-4 bg-blue-100 rounded-2xl border-4 border-ranti-ink flex-shrink-0">
-            <ShieldCheck size={32} className="text-blue-600" strokeWidth={2.5} />
-          </div>
-          <div>
-            <h2 className="text-3xl md:text-4xl font-display font-bold text-ranti-ink mb-1">Derechos ARCO</h2>
-            <p className="font-body font-bold text-gray-500">Ejerce tus derechos sobre tus datos personales conforme a la Ley N.º 29733.</p>
-          </div>
-        </div>
+  function reload(offset = 0) {
+    setLoading(true); setListError(''); setOffset(offset); setListVersion(current => current + 1);
+  }
 
-        <form onSubmit={handleSubmit} className="space-y-8">
-          
-          <div className="space-y-4">
-            <h3 className="font-display font-bold text-xl">1. ¿Qué derecho deseas ejercer?</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {[
-                { type: 'Acceso', icon: <UserCheck size={24}/>, desc: 'Solicitar copia de mis datos' },
-                { type: 'Rectificación', icon: <FileSignature size={24}/>, desc: 'Corregir datos inexactos' },
-                { type: 'Cancelación', icon: <XCircle size={24}/>, desc: 'Eliminar mis datos de Ranti' },
-                { type: 'Oposición', icon: <FileKey size={24}/>, desc: 'Oponerme a un uso específico' },
-              ].map((item) => (
-                <button
-                  type="button"
-                  key={item.type}
-                  onClick={() => setArcoType(item.type)}
-                  className={`p-4 rounded-2xl border-4 border-ranti-ink font-bold transition-all flex flex-col items-center text-center gap-2 ${
-                    arcoType === item.type ? 'bg-yellow-300 shadow-solid-sm -translate-y-1' : 'bg-gray-50 hover:bg-gray-100'
-                  }`}
-                >
-                  {item.icon}
-                  <span className="text-lg">{item.type}</span>
-                  <span className="text-xs font-normal text-gray-700">{item.desc}</span>
-                </button>
-              ))}
+  function saved(record, message) {
+    setSelected(record); setNotice(message); reload();
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    if (busy || reading) return;
+    const form = event.currentTarget;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const { fields, details } = await requestFields(form);
+      submissionId.current ??= globalThis.crypto.randomUUID();
+      const result = await apiRequest(endpoint, { token, method: 'POST', body: JSON.stringify({
+        ...details, submissionId: submissionId.current, type: fields.get('type'), identityConfirmed: fields.has('confirmed'),
+      }) });
+      submissionId.current = null;
+      form.reset();
+      saved(result, `Solicitud registrada. Expediente ${result.reference}.`);
+    } catch (failure) { setError(failure.message); }
+    finally { setBusy(false); }
+  }
+
+  async function read(id) {
+    if (reading || busy) return;
+    setReading(true); setListError(''); setNotice('');
+    try { setSelected(await apiRequest(`${endpoint}/${id}`, { token })); }
+    catch (failure) { setListError(failure.message); }
+    finally { setReading(false); }
+  }
+
+  return <div className="workflow max-w-6xl mx-auto">
+    <Link to="/perfil">← Volver a mi perfil</Link>
+    <h1 className="flex items-center gap-3 mt-4"><ShieldCheck aria-hidden="true" /> Privacidad y derechos ARCO</h1>
+    <div className="grid gap-5 lg:grid-cols-2">
+      <section aria-labelledby="arco-new-title">
+        <h2 id="arco-new-title">Nueva solicitud</h2>
+        <form onSubmit={submit} onChange={() => { submissionId.current = null; }}>
+          <fieldset disabled={busy || reading}>
+            <legend className="font-bold">Derecho solicitado</legend>
+            <div className="grid grid-cols-2 gap-x-3">
+              {arcoRights.map(([value, label, description], index) => <label key={value} className="border rounded-lg p-3">
+                <span className="flex items-center gap-2"><input className="!w-auto" type="radio" name="type" value={value} defaultChecked={index === 0} /> {label}</span>
+                <span className="block text-sm font-normal text-gray-600">{description}</span>
+              </label>)}
             </div>
-          </div>
-
-          <div className="space-y-4 pt-6 border-t-4 border-gray-100">
-            <h3 className="font-display font-bold text-xl">2. Detalle de la Solicitud</h3>
-            
-            <div>
-              <label className="block font-bold text-sm text-ranti-ink mb-2">Fundamento de tu petición</label>
-              <textarea 
-                rows="4" 
-                placeholder={`Detalla aquí por qué solicitas la ${arcoType.toLowerCase()} de tus datos...`} 
-                className="w-full bg-gray-50 border-4 border-ranti-ink rounded-xl px-4 py-3 outline-none font-bold focus:shadow-solid-sm transition-all resize-none" 
-                required
-              ></textarea>
-            </div>
-          </div>
-
-          <div className="space-y-4 pt-6 border-t-4 border-gray-100 bg-ranti-light p-6 rounded-2xl border-4 border-ranti-ink">
-            <h3 className="font-display font-bold text-xl">3. Verificación de Identidad</h3>
-            <p className="text-sm font-bold text-gray-600 mb-4">
-              Por ley, debemos verificar que eres el titular de los datos. Adjunta una copia de tu DNI o Carnet Universitario.
-            </p>
-            <input type="file" className="block w-full text-sm font-bold file:mr-4 file:py-3 file:px-4 file:rounded-full file:border-4 file:border-ranti-ink file:text-sm file:font-bold file:bg-white file:text-ranti-ink hover:file:bg-gray-100 cursor-pointer" required />
-          </div>
-
-          <div className="pt-4 flex justify-end">
-            <button type="submit" className="w-full sm:w-auto bg-ranti-ink text-white px-8 py-4 rounded-xl border-4 border-ranti-ink font-display font-bold text-xl hover:-translate-y-1 hover:shadow-solid active:translate-y-1 active:shadow-none transition-all">
-              Ingresar Solicitud ARCO
-            </button>
-          </div>
-
+            <RequestFields />
+            <label><input type="checkbox" name="confirmed" required /> Confirmo mi identidad y solicitud</label>
+            <div className="text-sm text-gray-600 break-all">Cuenta autenticada {session?.user?.email}</div>
+            <button type="submit">{busy ? 'Registrando…' : 'Registrar solicitud ARCO'}</button>
+          </fieldset>
         </form>
-      </div>
+        {error && <p role="alert">{error}</p>}
+        {notice && <p role="status">{notice}</p>}
+      </section>
+      <section aria-labelledby="arco-cases-title">
+        <h2 id="arco-cases-title">Mis expedientes</h2>
+        <button type="button" onClick={() => reload(offset)} disabled={loading || reading || busy}>Consultar expedientes</button>
+        {loading && <p role="status">Cargando expedientes…</p>}
+        {reading && <p role="status">Consultando expediente…</p>}
+        {listError && <p role="alert">{listError}</p>}
+        {!loading && !listError && !items.length && <p>Aún no tienes expedientes.</p>}
+        <ul className="divide-y">
+          {items.map(item => <li key={item.id} className="py-2">
+            <span className="block font-semibold">{item.reference} · {rightLabel(item.type)} · {item.status}</span>
+            <span className="block text-sm">Registro {formatDate(item.createdAt)}</span>
+            <button type="button" disabled={reading || busy} onClick={() => read(item.id)}>Consultar {item.reference}</button>
+          </li>)}
+        </ul>
+        {offset > 0 && <button type="button" disabled={loading} onClick={() => reload(Math.max(offset - 20, 0))}>Anterior</button>}
+        {nextOffset !== null && <button type="button" disabled={loading} onClick={() => reload(nextOffset)}>Siguiente</button>}
+        {selected && <article aria-label="Detalle del expediente ARCO">
+          <ArcoCase key={selected.id} item={selected} endpoint={endpoint} token={token} />
+          {selected.status === 'Pendiente de subsanación' && <CorrectionForm key={`${selected.id}:${selected.revision}`} item={selected} token={token} onSaved={saved} />}
+        </article>}
+      </section>
     </div>
-  );
+  </div>;
 }

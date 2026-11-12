@@ -7,6 +7,7 @@ import { requireAuth, requireRole, requireVerifiedAccount } from '../middlewares
 // Inyecciones del Paso B (Validación Zod)
 import { validateSchema } from '../middlewares/validation.middleware.js';
 import { createPublicationSchema } from '../modules/publications/publication.schema.js';
+import { getPublicOfferer } from '../modules/publications/publication.service.js';
 
 const router = express.Router();
 const owner = [requireAuth, requireVerifiedAccount];
@@ -19,6 +20,9 @@ router.get('/photos/:photoId', photos.read);
 router.get('/', controller.getPublications);
 router.get('/mine', ...owner, controller.listOwnPublications);
 router.get('/:id/pricing',...owner,controller.getOwnerPricing);
+router.get('/:id/offerer', async (req,res) => {
+  res.json(await getPublicOfferer(req.params.id));
+});
 router.get('/:id', controller.getPublicationById);
 
 // Rutas de Escritura (Protegidas por Zod)

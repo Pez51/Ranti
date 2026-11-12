@@ -6,7 +6,7 @@ import { rentalUnits,rentalUnitLabel } from '../../lib/rental-units';
 import { ToastContext } from '../../lib/toast-context';
 import { MAX_DESCRIPTION_CHARACTERS,publicationCategories,physicalConditions,modalityAdvice } from '../../lib/publication-options';
 
-const empty = { title: '', description: '', category: '', condition: '', modality: 'Venta', price: '', guarantee_amount: '', available_from: '', available_until: '', images: [], provenance_evidence_ref: '' };
+const empty = { title: '', description: '', category: '', condition: '', modality: 'Venta', price: '', guarantee_amount: '', guarantee_required: false, available_from: '', available_until: '', images: [], provenance_evidence_ref: '' };
 export default function PublicationForm({ initial = empty, onSave, onDirty = () => {}, busy = false, label = 'Guardar borrador' }) {
   const [values, setValues] = useState(() => ({ ...empty,rental_unit:'day', ...initial, images: (initial.images || []).map(image => typeof image === 'string' ? image : image.image_url) }));
   const [uploading, setUploading] = useState(false);
@@ -18,7 +18,7 @@ export default function PublicationForm({ initial = empty, onSave, onDirty = () 
   const [rating,setRating]=useState(initial.condition_rating || Math.max(0,physicalConditions.indexOf(initial.condition)+1));
   const characters=values.description.length;
   useEffect(()=>{if(!adviceShown.current && toast?.showInfoToast){adviceShown.current=true;toast.showInfoToast(modalityAdvice[initial.modality||'Venta']);}},[toast,initial.modality]);
-  function change(key, value) { setValues(previous => ({ ...previous, [key]: value })); onDirty(); }
+  function change(key, value) { setValues(previous => ({ ...previous, [key]: value })); if(['price','guarantee_amount','modality'].includes(key))setError(''); onDirty(); }
   const sale = values.modality === 'Venta';
   const loan = values.modality === 'Préstamo';
   const exposure = Math.max(loan ? 0 : Number(values.price || 0), sale ? 0 : Number(values.guarantee_amount || 0));
@@ -42,7 +42,9 @@ export default function PublicationForm({ initial = empty, onSave, onDirty = () 
     if ((!from&&until)||(values.modality!=='Alquiler'&&Boolean(from)!==Boolean(until))||
       (from&&until&&new Date(from)>=new Date(until)))return setError('Indica un inicio válido y, si pones fecha de fin, debe ser posterior.');
     if(label==='Continuar publicación' && !sale && !from) return setError('Indica las fechas de disponibilidad para continuar.');
-    await onSave({ title: values.title.trim(), description: values.description.trim(), category:selectedCategory,category_other:selectedCategory==='Otros'?otherCategory.trim():null, condition:rating?physicalConditions[rating-1]:values.condition.trim(),condition_rating:rating||null, modality: values.modality,rental_unit:values.modality==='Alquiler'?values.rental_unit:'day', price, guarantee_amount: guarantee, available_from: from, available_until: until, images, provenance_evidence_ref: provenance });
+    if(!sale&&values.guarantee_required&&Number(guarantee)<=0){setError('Indica un importe mayor a cero para la garantía obligatoria.');return;}
+    await onSave({ title: values.title.trim(), description: values.description.trim(), category:selectedCategory,category_other:selectedCategory==='Otros'?otherCategory.trim():null, condition:rating?physicalConditions[rating-1]:values.condition.trim(),condition_rating:rating||null, modality: values.modality,rental_unit:values.modality==='Alquiler'?values.rental_unit:'day', price, guarantee_amount: guarantee, guarantee_required:!sale&&values.guarantee_required===true, available_from: from, available_until: until, images, provenance_evidence_ref: provenance,
+      ...(values.accessories!==undefined?{accessories:values.accessories?.trim()||null}:{}) });
   }
   return <form onSubmit={save} noValidate>
     <fieldset disabled={busy}>
@@ -50,6 +52,7 @@ export default function PublicationForm({ initial = empty, onSave, onDirty = () 
       <PublicationPhotos images={values.images} onChange={images => change('images', images)} disabled={busy||uploading} onProcessing={value => { setUploading(value); if (value) onDirty(); }} />
       <label>Descripción<textarea value={values.description} maxLength={MAX_DESCRIPTION_CHARACTERS} aria-describedby="description-character-count" aria-invalid={characters>MAX_DESCRIPTION_CHARACTERS} onChange={e => change('description', e.target.value)} /></label>
       <p id="description-character-count" className={characters>MAX_DESCRIPTION_CHARACTERS?'description-count description-count-error':'description-count'}>{characters}/{MAX_DESCRIPTION_CHARACTERS} caracteres. Incluye espacios y saltos de línea.</p>
+      <label>Accesorios incluidos (opcional)<textarea maxLength={500} value={values.accessories??''} onChange={event=>change('accessories',event.target.value)}/></label>
       <label>Categoría<select value={selectedCategory} onChange={e=>{setSelectedCategory(e.target.value);onDirty();}}><option value="">Selecciona una categoría</option>{publicationCategories.map(category=><option key={category}>{category}</option>)}</select></label>
       {selectedCategory==='Otros' && <label>¿Qué tipo de artículo es?<input value={otherCategory} maxLength={100} onChange={e=>{setOtherCategory(e.target.value);onDirty();}} /></label>}
       <fieldset className="physical-rating"><legend>Estado físico</legend><div className="physical-stars">{physicalConditions.map((condition,index)=><button type="button" key={condition} aria-label={`${index+1} ${index===0?'estrella':'estrellas'}: ${condition}`} aria-pressed={rating===index+1} onClick={()=>{setRating(index+1);onDirty();}}><Star size={30} fill={index<rating?'currentColor':'none'} aria-hidden="true"/></button>)}</div><p>{rating?`${rating}/5 · ${physicalConditions[rating-1]}`:initial.condition?`Estado anterior: ${initial.condition}. Selecciona de 1 a 5 estrellas.`:'Selecciona de 1 a 5 estrellas según el estado real del artículo.'}</p></fieldset>
@@ -61,13 +64,19 @@ export default function PublicationForm({ initial = empty, onSave, onDirty = () 
       {loan && <p className="loan-community">Presta para que el conocimiento siga creciendo. Compartes tu artículo sin cobrar por su uso y ayudas a otro miembro de la comunidad a alcanzar sus metas. Puedes acordar una garantía para cuidar lo que compartes.</p>}
       {!sale && <>
         <label>Garantía (S/)<input type="number" min="0" max="99999999.99" step="0.01" value={values.guarantee_amount ?? ''} onChange={e => change('guarantee_amount', e.target.value)} /></label>
+        <div className="guarantee-choice">
+          <label><input type="checkbox" checked={values.guarantee_required===true} onChange={e=>change('guarantee_required',e.target.checked)} aria-describedby="guarantee-choice-help guarantee-choice-advice" />¿Quieres que el pago de garantía sea obligatorio?</label>
+          <p id="guarantee-choice-help">{values.guarantee_required?'Elegiste exigir la garantía como condición del trato. Puedes desmarcar esta opción para dejarla como referencial.':'Marcar esta opción es opcional. Si la dejas desmarcada, la garantía es referencial ante daños: no se exige por adelantado ni se cobra automáticamente si el artículo se malogra.'}</p>
+          <small id="guarantee-choice-advice">Exigir una garantía puede reducir el interés y las solicitudes de tu artículo.</small>
+        </div>
         <label>Disponible desde<input type="date" value={values.available_from?.slice(0, 10) || ''} onChange={e => change('available_from', e.target.value)} /></label>
         <label>Disponible hasta<input type="date" aria-describedby={values.modality==='Alquiler'?'rental-end-optional':undefined} value={values.available_until?.slice(0, 10) || ''} onChange={e => change('available_until', e.target.value)} /></label>
         {values.modality==='Alquiler'&&<p id="rental-end-optional">Fecha de fin opcional: no es necesario completarla. Si la dejas vacía, tu artículo estará disponible desde la fecha de inicio, sin fecha límite. Quien lo solicite elegirá los días u horas que necesita.</p>}
         <p>Las fechas nuevas se interpretan a medianoche de Perú. La garantía declarada no implica cobro ni custodia.</p>
       </>}
       <p>El mayor valor entre precio y garantía determina el riesgo: desde S/500 se requiere revisión; desde S/1000 también evidencia de procedencia. El servidor decide el nivel y estado finales.</p>
-      {(exposure >= 1000 || values.provenance_evidence_ref) && <ProvenanceUpload value={values.provenance_evidence_ref} onChange={ref=>change('provenance_evidence_ref',ref)} disabled={busy||uploading} onProcessing={value=>{setUploading(value);if(value)onDirty();}}/>}
+      <p role="status">{exposure>=1000?'Boleta obligatoria: el precio o la garantía alcanza S/1000.':'No necesitas adjuntar boleta: el precio y la garantía aplicables son menores de S/1000.'}{exposure<1000&&values.provenance_evidence_ref?' Tu comprobante anterior se conserva; no necesitas volver a subirlo.':''}</p>
+      {exposure >= 1000 && <ProvenanceUpload value={values.provenance_evidence_ref} onChange={ref=>change('provenance_evidence_ref',ref)} disabled={busy||uploading} onProcessing={value=>{setUploading(value);if(value)onDirty();}}/>}
       {error && <p role="alert">{error}</p>}
       <button disabled={busy || uploading || characters>MAX_DESCRIPTION_CHARACTERS}>{uploading ? 'Subiendo fotos…' : busy ? 'Guardando…' : label}</button>
     </fieldset>

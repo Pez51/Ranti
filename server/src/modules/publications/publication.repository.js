@@ -36,7 +36,7 @@ export const getPublications = async (search, modality, category) => {
 // 2. Detalle de publicación y dueño
 export const getPublicationById = async (publicationId) => {
   const query = `
-    SELECT p.*, u.id as owner_id, u.email, u.reputation_score, u.academic_condition
+    SELECT p.*, u.id as owner_id, u.email, u.academic_condition
     FROM publications p
     JOIN users u ON p.owner_id = u.id
     WHERE p.id = $1

@@ -1,19 +1,17 @@
-import { expirePendingOperations } from '../modules/operations/operation.service.js';
+import { pathToFileURL } from 'node:url';
+import pool from '../config/database.js';
+import { closeUnansweredReturns, expireOperationRequests, openOverdueReturns } from '../modules/operations/workflow-jobs.js';
 
-// Exportamos la función con el nombre exacto que busca scheduler.js
-export const expireOldOperations = async () => {
-  try {
-    // Ya no inyectamos "pool" ni cerramos la conexión aquí, 
-    // porque el Servicio y el Repositorio ya gestionan la base de datos solos.
-    const expired = await expirePendingOperations();
-    
-    // Validamos que expired exista para evitar errores al leer .length
-    const count = expired ? expired.length : 0;
-    console.log(`[Job] Expired ${count} operation requests.`);
-    
-  } catch (error) {
-    console.error('❌ [Job Error] Operation request expiry failed:', error.message);
-    // NO usamos process.exitCode = 1 ni pool.end() aquí, 
-    // porque apagarían todo el servidor Express.
-  }
-};
+export async function expireOldOperations(db = pool) {
+  const results = await Promise.allSettled([expireOperationRequests(db), closeUnansweredReturns(db), openOverdueReturns(db)]);
+  const failures = results.filter(result => result.status === 'rejected');
+  if (results[0].status === 'fulfilled') console.log(`[Job] Expired ${results[0].value.length} operation requests.`);
+  if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Operation deadlines could not be processed.');
+  return results.map(result => result.status === 'fulfilled' ? result.value : []);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try { await expireOldOperations(); }
+  catch (error) { console.error(error); process.exitCode = 1; }
+  finally { await pool.end(); }
+}

@@ -1,7 +1,9 @@
 export default function PublicationStatus({ publication }) {
   return <div role="status" aria-live="polite">
     <p>Estado: {publication.status}</p>
-    {publication.status==='Borrador'&&publication.reviewed_at&&publication.review_reason&&<p className="availability-badge">Publicación denegada en revisión · Corrige el borrador y vuelve a enviarlo.</p>}
+    {publication.status==='Borrador'&&publication.reviewed_at&&publication.review_reason&&<p className="availability-badge">
+      {publication.review_outcome==='observe'?'Publicación observada':'Publicación denegada en revisión'} · Corrige el borrador y vuelve a enviarlo.
+    </p>}
     {publication.availability && <p className={`availability-badge availability-${publication.availability.state}`}><strong>{publication.availability.label}</strong></p>}
     {publication.availability?.return_pending && <p>El artículo sigue en uso hasta que ambos confirmen su devolución. No se libera automáticamente al vencer la fecha.</p>}
     {publication.availability?.intervals?.map((interval,index)=><p key={index}>Período ocupado: {new Date(interval.start).toLocaleString('es-PE')} → {new Date(interval.end).toLocaleString('es-PE')}{interval.in_use?' · Entregado, devolución pendiente':''}</p>)}

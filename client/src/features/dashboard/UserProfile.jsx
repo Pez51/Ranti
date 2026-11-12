@@ -5,6 +5,7 @@ import { getSession, updateSessionProfile } from '../../lib/auth';
 import AcademicCombobox from './AcademicCombobox';
 import { preparePhoto } from '../../lib/prepare-photo';
 import { useToast } from '../../lib/toast-context';
+import ReputationSummary from '../../components/layout/ReputationSummary';
 
 export default function UserProfile() {
   const navigate = useNavigate();
@@ -115,6 +116,7 @@ export default function UserProfile() {
   const academicRole = ['Estudiante', 'Egresado'].includes(profile?.role);
   return <div className="workflow max-w-3xl mx-auto">
     <h1>Mi perfil</h1>
+    <Link to="/perfil/pagos">Configurar pagos y cobros</Link>
     {loading && <p role="status">Cargando perfil…</p>}
     {error && <p role="alert" ref={errorRef} tabIndex={-1}>{error}</p>}
     {notice && <p role="status">{notice}</p>}
@@ -127,10 +129,10 @@ export default function UserProfile() {
         <dt>Condición académica</dt><dd>{profile.academic_condition}</dd>
         <dt>Universidad</dt><dd>{profile.university}</dd>
         <dt>Estado de cuenta</dt><dd>Activa / Verificado (acceso confirmado por el servidor)</dd>
-        <dt>Reputación</dt><dd>{profile.reputation_score ?? 'Sin datos'}</dd>
         <dt>Operaciones</dt><dd>{profile.operations_count ?? 'Sin datos'}</dd>
         <dt>Cuenta creada</dt><dd>{profile.created_at ? new Date(profile.created_at).toLocaleString() : 'Sin datos'}</dd>
       </dl>
+      <ReputationSummary key={`${profile.id}-${token}`} profile={{...profile,is_self:true}} token={token}/>
       <form onSubmit={save} onInvalidCapture={explainInvalidField}>
         <fieldset disabled={busy}>
           <label>Nombre visible

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../lib/api';
 import { saveSession } from '../../lib/auth';
+import { returnDestination } from './graduate-accreditation';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -24,10 +25,7 @@ export default function Login() {
       });
       if (!session.token || !session.user) throw new Error('No se pudo iniciar la sesión.');
       saveSession({ token: session.token, user: session.user }, remember);
-      const from = location.state?.from;
-      const path = typeof from?.pathname === 'string' ? from.pathname : '';
-      const safe = /^\/(?!\/)/.test(path) && !/[\\\s]/.test(path) && !['/login', '/registro'].includes(path);
-      navigate(safe ? { pathname: path, search: from.search || '', hash: from.hash || '' } : '/perfil', { replace: true });
+      navigate(returnDestination(location.state?.from), { replace: true });
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -100,9 +98,15 @@ export default function Login() {
 
         <div className="mt-8 pt-6 border-t-4 border-gray-100 text-center">
           <p className="font-bold text-gray-500 mb-4">¿Aún no tienes cuenta?</p>
-          <Link to="/registro" className="underline flex justify-center items-center gap-2">
+          <Link to="/registro" state={location.state} className="underline flex justify-center items-center gap-2">
             <UserPlus size={20} /> Registrarse o retomar verificación
           </Link>
+        </div>
+
+        <div className="mt-6 pt-6 border-t-4 border-gray-100 space-y-3">
+          <h3 className="font-display font-bold text-lg">Egresado con correo personal</h3>
+          <Link to="/acreditacion" state={location.state} className="block underline font-bold">Ingresar o consultar acreditación</Link>
+          <Link to="/acreditacion?solicitar=1" state={location.state} className="block underline font-bold">Registrarme y acreditar egreso</Link>
         </div>
 
         <div className="mt-6 flex items-start gap-2 bg-yellow-100 p-3 rounded-lg border-2 border-yellow-300 text-xs font-bold text-yellow-800">

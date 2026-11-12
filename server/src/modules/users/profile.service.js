@@ -1,6 +1,7 @@
 import { AppError } from '../../shared/errors/app-error.js';
 import { isAcademicSelection } from './academic-catalog.js';
 import { z } from 'zod';
+import { reputationProjection } from '../operations/review-read.js';
 
 const university = 'Universidad Católica de Santa María';
 const invalid = () => new AppError({ status: 400, code: 'INVALID_INPUT', message: 'Datos inválidos.' });
@@ -16,21 +17,22 @@ export function publicProfile(user) {
   return { id: user.id, email: user.email, role: user.role, academic_condition: user.role,
     university, display_name: user.display_name, contact_number: user.contact_number,
     avatar_url: user.avatar_url, faculty: user.faculty, career: user.career,
-    reputation_score: user.reputation_score, operations_count: user.operations_count,
+    operations_count: user.operations_count,
     created_at: user.created_at };
 }
 
 export async function getOwnProfile(db, userId) {
   const user = (await db.query('SELECT * FROM users WHERE id = $1', [userId])).rows[0];
-  return publicProfile(requireCurrentUser(user));
+  return {...publicProfile(requireCurrentUser(user)),...await reputationProjection(db,userId,userId)};
 }
 
-export async function getMemberProfile(db, userId) {
+export async function getMemberProfile(db, userId, viewerId) {
+  if(!z.uuid().safeParse(viewerId).success)throw unavailable();
   if (!z.uuid().safeParse(userId).success) throw new AppError({status:400,code:'INVALID_INPUT',message:'Usuario inválido.'});
-  const row=(await db.query(`SELECT id,display_name,avatar_url,email,contact_number,reputation_score,operations_count,role,faculty,career
+  const row=(await db.query(`SELECT id,display_name,avatar_url,email,contact_number,operations_count,role,faculty,career
     FROM users WHERE id=$1 AND status='Activa' AND verification_status='Verificado'`,[userId])).rows[0];
   if(!row)throw new AppError({status:404,code:'PROFILE_NOT_FOUND',message:'Este perfil no está disponible.'});
-  return {...row,university};
+  return {...row,university,...await reputationProjection(db,userId,viewerId)};
 }
 
 export async function updateOwnProfile(db, userId, patch) {

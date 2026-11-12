@@ -30,8 +30,9 @@ describe('profile under verified account', () => {
     expect(await getOwnProfile(db, userId)).toMatchObject({
       id: userId, email: active.email, role: 'Egresado', academic_condition: 'Egresado',
       university: 'Universidad Católica de Santa María', contact_number: null,
-      avatar_url: null, reputation_score: '4.25', operations_count: 7,
+      avatar_url: null, operations_count: 7,
     });
+    expect(await getOwnProfile(db,userId)).not.toHaveProperty('reputation_score');
   });
 
   it.each(['email', 'role', 'academic_condition', 'avatar_url', 'reputation_score',

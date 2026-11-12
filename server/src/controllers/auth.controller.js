@@ -13,7 +13,7 @@ const loginInput = z.object({
   email: z.string().trim().toLowerCase().refine(isUcsmInstitutionalEmail),
   password: passwordInput,
 });
-const signToken = user => jwt.sign({ id: user.id, role: user.role }, env.JWT_SECRET, { expiresIn: '24h' });
+export const signToken = user => jwt.sign({ id: user.id, role: user.role }, env.JWT_SECRET, { expiresIn: '24h' });
 // Equal-cost password comparison for an absent account, without logging credentials.
 const absentPasswordHash = bcrypt.hashSync('unusable-login-placeholder', 10);
 const respondError = (res, error) => {
@@ -55,7 +55,7 @@ export const login = async (req, res) => {
     }
     return res.status(200).json({ message: 'Bienvenido :D', token: signToken(user), user: {
       id: user.id, email: user.email, role: user.role, status: user.status,
-      verification_status: user.verification_status, reputation: user.reputation_score,
+      verification_status: user.verification_status,
     } });
   } catch (error) { return respondError(res, error); }
 };

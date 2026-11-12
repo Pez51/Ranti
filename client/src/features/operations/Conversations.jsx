@@ -29,7 +29,7 @@ export function ConversationWindow({id,token,compact=false,onProfile,onClose,onM
   const [data,setData]=useState(null),[messages,setMessages]=useState([]),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[olderBusy,setOlderBusy]=useState(false);
   const draft=useRef(new Map()),alive=useRef(true);
   const [retry,setRetry]=useState(0),[calendarOpen,setCalendarOpen]=useState(null);
-  const [quickTextSent,setQuickTextSent]=useState(false);
+  const [introDismissed,setIntroDismissed]=useState(false);
   const [paymentOpen,setPaymentOpen]=useState(null);
   const [sentCalendar,setSentCalendar]=useState(()=>new Set());
   const lastSeen=useRef(null),messageList=useRef(null),follow=useRef(true);
@@ -72,6 +72,7 @@ export function ConversationWindow({id,token,compact=false,onProfile,onClose,onM
   const activeDeal=data?.deals?.find(deal=>['Aceptada','Pendiente de pago/garantía','Lista para entrega'].includes(deal.status));
   const paymentDeals=data?.is_my_product?[]:(data?.deals||[]).filter(deal=>deal.payment_available);
   const calendarSent=activeDeal&&(sentCalendar.has(activeDeal.id)||messages.some(message=>message.mine&&message.kind==='calendar_invitation'&&message.operation_id===activeDeal.id));
+  const showIntroduction=Boolean(data)&&messages.length===0&&!introDismissed;
   const suggestions=activeDeal?(data?.is_my_product?['Hola, coordinemos nuestro encuentro.','¿Te parece vernos dentro de la UCSM?','Marcaré mis horarios disponibles.']:['Gracias, coordinemos el encuentro.','¿Podemos vernos dentro de la UCSM?','Marcaré mis horarios disponibles.']):(data?.is_my_product?['Hola, ¿en qué puedo ayudarte?','Te confirmo la disponibilidad enseguida.','¿Qué te gustaría saber del artículo?']:['Hola, ¿sigue disponible?','¿Me cuentas más sobre el artículo?','¿Podemos encontrarnos dentro de la UCSM?']);
   return <section className={compact?`chat-window ${data?.is_my_product?'chat-owned':'chat-wanted'} ${minimized?'chat-minimized':''}`:'workflow chat-page max-w-4xl mx-auto'} aria-label={`Chat: ${data?.counterpart_name||'Conversación'}`}>
     {compact?<header className="chat-window-header">
@@ -79,7 +80,7 @@ export function ConversationWindow({id,token,compact=false,onProfile,onClose,onM
       <button type="button" aria-label={minimized?'Restaurar chat':'Minimizar chat'} onClick={onMinimize}><Minus size={16}/></button><button type="button" aria-label="Cerrar chat" onClick={onClose}><X size={16}/></button>
     </header>:<><Link to="/mensajes">← Mis conversaciones</Link><h1>{data?.publication.title||'Conversación'}</h1></>}
     <div className="chat-window-body" hidden={minimized}>
-    <p className="chat-admin-disclosure">Administración puede revisar este chat. Accesos registrados.</p>
+    {showIntroduction&&<p className="chat-admin-disclosure">Administración puede revisar este chat. Accesos registrados.</p>}
     {data&&<div className="chat-product-context"><span className={`chat-product-tag ${data.is_my_product?'owned':'wanted'}`}>{data.is_my_product?'Mi producto':'Me interesa'}</span><Link to={`/producto/${data.publication.id}`}>{data.publication.title}</Link></div>}
     {data?.deals?.length>0&&<button type="button" className="chat-calendar-quick" onClick={()=>setCalendarOpen('all')}><CalendarDays size={17}/>Abrir calendario y entrega</button>}
     {error&&<div role="alert">{error}<button type="button" onClick={()=>{setError('');setRetry(v=>v+1);}}>Reintentar carga del chat</button></div>}
@@ -88,14 +89,15 @@ export function ConversationWindow({id,token,compact=false,onProfile,onClose,onM
     <ol ref={messageList} onScroll={()=>{const list=messageList.current;follow.current=list.scrollHeight-list.scrollTop-list.clientHeight<60;}} className="chat-messages" aria-label="Mensajes">{messages.map(message=><li key={message.id} className={`${message.mine?'chat-message mine':'chat-message'} ${message.kind==='calendar_invitation'?'chat-calendar-invitation':''} ${message.kind==='workflow_event'?'chat-workflow-event':''}`}>{message.kind==='workflow_event'?<><strong>Ranti · Actualización del trato</strong><span className="chat-event-actor">{message.mine?'Tú':data?.counterpart_name||'La otra persona'}</span></>:<button type="button" className="chat-sender" onClick={()=>onProfile?.(message.mine?getSession()?.user.id:data?.counterpart?.id)}>{message.mine?'Tú':data?.counterpart_name||'Participante'}</button>}
       {message.kind==='calendar_invitation'?<><strong><CalendarDays size={18}/>Calendario para acordar el encuentro</strong><p>Marquen sus horarios y confirmen juntos cuándo entregar el artículo.</p>
         {data?.deals?.some(deal=>deal.id===message.operation_id)?<button type="button" className="chat-open-calendar" onClick={()=>setCalendarOpen(message.operation_id)}>Elegir horarios y confirmar encuentro</button>:<Link to="/operaciones">Ver coordinación en mis operaciones</Link>}</>:<p>{message.body}</p>}
+      {message.kind==='workflow_event'&&message.event_type?.startsWith('incidence.')&&message.operation_id&&<Link to={`/operaciones?operation=${message.operation_id}`}>Ver seguimiento del problema</Link>}
       {message.kind==='workflow_event'&&['calendar.saved','calendar.skipped','handoff.propose','handoff.agree','handoff.request-change'].includes(message.event_type)&&data?.deals?.some(deal=>deal.id===message.operation_id)&&<button type="button" className="chat-open-calendar" onClick={()=>setCalendarOpen(message.operation_id)}>Ver coordinación</button>}
       <time dateTime={message.created_at}>{compact?new Date(message.created_at).toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'}):new Date(message.created_at).toLocaleString('es-PE')}</time></li>)}</ol>
     {paymentDeals.map(deal=><div className="chat-payment-bubble" key={deal.id}><strong>Encuentro acordado</strong><span>El siguiente paso es el pago simulado. Sin cobro real.</span><button type="button" onClick={()=>setPaymentOpen(deal.id)}>Continuar al pago simulado{paymentDeals.length>1?` · ${deal.id.slice(0,8)}`:''}</button></div>)}
-    {data&&(!quickTextSent||!calendarSent)&&<div className="chat-quick-actions" aria-label="Mensajes rápidos">
-      {!quickTextSent&&<><span>Enviar con un toque</span><div>{suggestions.map(body=><button type="button" key={body} disabled={busy} onClick={async()=>{if(await transmit(body))setQuickTextSent(true);}}>{body}</button>)}</div></>}
+    {data&&(showIntroduction||!calendarSent)&&<div className="chat-quick-actions" aria-label="Mensajes rápidos">
+      {showIntroduction&&<><span>Enviar con un toque</span><div>{suggestions.map(body=><button type="button" key={body} disabled={busy} onClick={async()=>{if(await transmit(body))setIntroDismissed(true);}}>{body}</button>)}</div></>}
       {!calendarSent&&<button type="button" className="chat-calendar-quick" disabled={busy||!activeDeal} onClick={()=>transmit('',activeDeal.id)}><CalendarDays size={17}/><span>{activeDeal?'Invitar al calendario del encuentro':'Calendario disponible al aceptar el trato'}</span></button>}
     </div>}
-    <form className="chat-compose" onSubmit={send}><label htmlFor={`chat-message-${id}`} className={compact?'chat-sr-only':''}>Mensaje</label><textarea id={`chat-message-${id}`} placeholder="Escribe un mensaje…" rows={2} maxLength={1000} disabled={busy||!data} value={text} onChange={event=>setText(event.target.value)}/><span className="chat-character-count">{text.length}/1000</span><button disabled={busy||!data||!text.trim()}>{busy?'Enviando…':'Enviar mensaje'}</button></form>
+    <form className="chat-compose" onSubmit={send}><label htmlFor={`chat-message-${id}`} className={compact?'chat-sr-only':''}>Mensaje</label><textarea id={`chat-message-${id}`} placeholder="Escribe un mensaje…" rows={2} maxLength={1000} disabled={busy||!data} value={text} onChange={event=>{setText(event.target.value);if(event.target.value.length>0)setIntroDismissed(true);}}/><span className="chat-character-count">{text.length}/1000</span><button disabled={busy||!data||!text.trim()}>{busy?'Enviando…':'Enviar mensaje'}</button></form>
     </div>
     {calendarOpen&&data&&<CalendarDialog deals={calendarOpen==='all'?data.deals:data.deals.filter(deal=>deal.id===calendarOpen)} token={token} title={data.publication.title} onClose={()=>{setCalendarOpen(null);setRetry(value=>value+1);}}/>}
     {paymentOpen&&<ChatPaymentDialog operationId={paymentOpen} token={token} onClose={()=>{setPaymentOpen(null);setRetry(value=>value+1);}} onCompleted={()=>{setPaymentOpen(null);setRetry(value=>value+1);}}/>}

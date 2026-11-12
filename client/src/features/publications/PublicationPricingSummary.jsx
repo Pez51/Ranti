@@ -9,7 +9,7 @@ export default function PublicationPricingSummary({publication,pricing,busy,onBa
       <dt>Tarifa de servicio Ranti{loan?'':` (${pricing.service_fee_percent}%)`}</dt><dd>− {soles(pricing.service_fee)}</dd>
       <dt>{loan?'Ingreso por el préstamo':'Monto neto estimado para ti'}</dt><dd className="owner-net">{soles(pricing.owner_net)}{pricing.modality==='Alquiler'?` / ${pricing.unit}`:''}</dd>
       {!loan && <><dt>IGV adicional a la tarifa</dt><dd>S/ 0.00</dd></>}
-      {pricing.modality!=='Venta' && <><dt>Garantía acordada</dt><dd>{soles(pricing.guarantee_amount)} · No es ganancia</dd></>}
+      {pricing.modality!=='Venta' && <><dt>Garantía {pricing.guarantee_required?'obligatoria':'referencial ante daños'}</dt><dd>{soles(pricing.guarantee_amount)} · No es ganancia</dd></>}
     </dl>
     <p>{loan?'Compartes sin cobrar por el uso y sin comisión de Ranti.':'La tarifa de servicio cubre el uso de Ranti para registrar la operación y sus condiciones: 10% para precios menores de S/60 y 5% desde S/60. Los impuestos del servicio están contemplados dentro de esa tarifa, no se añaden como otro descuento.'}</p>
     <p className="pricing-pilot-note">Vista informativa del piloto académico: no es un cobro, una liquidación ni un comprobante. Ranti no procesa pagos ni custodia garantías reales en este entorno.</p>

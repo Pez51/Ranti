@@ -13,6 +13,11 @@ vi.mock('./ChatPaymentDialog',()=>({default:({operationId})=><div role="dialog" 
 beforeEach(()=>{vi.resetAllMocks();session();});
 function setup(path='/mensajes/chat-1'){return render(<MemoryRouter initialEntries={[path]}><Routes><Route path="/mensajes/:id" element={<Conversations/>}/><Route path="/mensajes" element={<Conversations/>}/><Route path="/producto/1" element={<OpenChat publicationId="1"/>}/></Routes></MemoryRouter>);}
 const data={items:[],before:null,publication:{id:'p-1',title:'Calculadora'},counterpart_name:'María'};
+it('links incidence notices to the exact operation follow-up',async()=>{
+  apiRequest.mockResolvedValue({...data,items:[{id:'11',kind:'workflow_event',event_type:'incidence.opened',operation_id:'op-1',body:'Se abrió una incidencia.',mine:false,created_at:'2026-10-14T12:00:00Z'}]});
+  setup();
+  expect(await screen.findByRole('link',{name:'Ver seguimiento del problema'})).toHaveAttribute('href','/operaciones?operation=op-1');
+});
 it('shows persisted workflow updates and the requester payment bubble without opening the calendar',async()=>{
   apiRequest.mockResolvedValueOnce({...data,is_my_product:false,deals:[{id:'op-1',status:'Pendiente de pago/garantía',payment_available:true}],items:[{id:'9',kind:'workflow_event',event_type:'handoff.agree',operation_id:'op-1',body:'Confirmó el lugar y horario.',mine:false,created_at:'2026-10-13T10:00:00Z'}]});
   setup();await screen.findByText('Confirmó el lugar y horario.');
@@ -38,16 +43,38 @@ it('allows retry after a failed load instead of leaving a permanent spinner',asy
   fireEvent.click(screen.getByRole('button',{name:'Reintentar carga del chat'}));
   await screen.findByRole('heading',{name:'Calculadora'});expect(screen.getByLabelText('Mensaje')).not.toBeDisabled();
 });
-it('sends a quick bubble with one click without deleting a custom draft',async()=>{
+it('hides the introduction after sending a quick bubble with one click',async()=>{
   apiRequest.mockResolvedValueOnce(data).mockResolvedValueOnce({message:{id:'8',body:'Hola, ¿sigue disponible?',mine:true,created_at:'2026-10-13T10:00:00Z'}});
   setup();await screen.findByRole('heading',{name:'Calculadora'});
-  fireEvent.change(screen.getByLabelText('Mensaje'),{target:{value:'Borrador personal'}});
+  expect(screen.getByText('Administración puede revisar este chat. Accesos registrados.')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button',{name:'Hola, ¿sigue disponible?'}));
   await screen.findByText('Hola, ¿sigue disponible?',{selector:'p'});
-  expect(screen.getByLabelText('Mensaje')).toHaveValue('Borrador personal');
+  expect(screen.getByLabelText('Mensaje')).toHaveValue('');
+  expect(screen.queryByText('Administración puede revisar este chat. Accesos registrados.')).not.toBeInTheDocument();
   expect(screen.queryByRole('button',{name:'Hola, ¿sigue disponible?'})).not.toBeInTheDocument();
   expect(screen.getByRole('button',{name:'Calendario disponible al aceptar el trato'})).toBeDisabled();
   expect(JSON.parse(apiRequest.mock.calls[1][1].body)).toMatchObject({body:'Hola, ¿sigue disponible?'});
+});
+it('hides both introductory elements when typing and keeps them hidden after clearing the draft',async()=>{
+  apiRequest.mockResolvedValueOnce(data);
+  setup();await screen.findByRole('heading',{name:'Calculadora'});
+  expect(screen.getByText('Administración puede revisar este chat. Accesos registrados.')).toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'Hola, ¿sigue disponible?'})).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Mensaje'),{target:{value:'Hola'}});
+  expect(screen.queryByText('Administración puede revisar este chat. Accesos registrados.')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Hola, ¿sigue disponible?'})).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Mensaje'),{target:{value:''}});
+  expect(screen.queryByText('Administración puede revisar este chat. Accesos registrados.')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Hola, ¿sigue disponible?'})).not.toBeInTheDocument();
+});
+it.each([true,false])('does not show introductory elements when reopening a conversation with messages (mine=%s)',async mine=>{
+  apiRequest.mockResolvedValue({...data,items:[{id:'1',body:'Mensaje anterior',mine,created_at:'2026-10-13T10:00:00Z'}]});
+  const view=setup();await screen.findByText('Mensaje anterior');
+  expect(screen.queryByText('Administración puede revisar este chat. Accesos registrados.')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Hola, ¿sigue disponible?'})).not.toBeInTheDocument();
+  view.unmount();setup();await screen.findByText('Mensaje anterior');
+  expect(screen.queryByText('Administración puede revisar este chat. Accesos registrados.')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Hola, ¿sigue disponible?'})).not.toBeInTheDocument();
 });
 it('sends a typed calendar invitation tied to an accepted deal',async()=>{
   apiRequest.mockResolvedValueOnce({...data,is_my_product:true,deals:[{id:'op-1',status:'Aceptada',modality:'Venta'}]})

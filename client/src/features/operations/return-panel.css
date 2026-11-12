@@ -1,0 +1,24 @@
+.return-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.return-panel h4 { margin: .85rem 0 .45rem; }
+.return-panel dt { font-weight: 700; }
+.return-panel dd { margin: 0 0 .45rem; overflow-wrap: anywhere; }
+.return-panel .return-overdue {
+  border: 1px solid #d6a262;
+  border-radius: .65rem;
+  background: #fff8ee;
+  padding: .65rem .85rem;
+}
+.return-overdue a { margin-inline-start: .65rem; }
+.operation-panel-actions { display: flex; flex-wrap: wrap; gap: .35rem .5rem; }
+.delivery-otp { font-size: 1.35rem; letter-spacing: .14em; font-variant-numeric: tabular-nums; }
+.handoff-panel label:has(input[type="checkbox"]) { display: flex; align-items: baseline; gap: .45rem; }
+.handoff-panel label input[type="checkbox"] { width: auto; margin: 0; }
+
+@media (max-width: 42rem) {
+  .return-layout { grid-template-columns: minmax(0, 1fr); }
+}

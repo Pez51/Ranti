@@ -10,15 +10,42 @@ const formatPrice = (product) => product.modality === 'Préstamo'
   : `S/ ${Number(product.price).toFixed(2)}${product.modality === 'Alquiler' ? `/${rentalUnitLabel(product.rental_unit)}` : ''}`;
 
 export default function Home() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const searchQuery = searchParams.get('q') || '';
-  const categoryQuery = searchParams.get('category') || ''; // <-- NUEVO
-  const conditionQuery = searchParams.get('condition') || ''; // <-- NUEVO
-  const [activeFilter, setActiveFilter] = useState('Todos');
+  const categoryQuery = searchParams.get('category') || '';
+  const conditionQuery = searchParams.get('condition') || '';
+  const modalityQuery = searchParams.get('modality') || '';
+  const maxPrice = searchParams.get('max_price') || '';
+  const availableFrom = searchParams.get('available_from') || '';
+  const availableUntil = searchParams.get('available_until') || '';
+  const activeFilter = ['Venta', 'Alquiler', 'Préstamo'].includes(modalityQuery) ? modalityQuery : 'Todos';
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
   const gridRef = useRef(null);
+
+  const handleFilterChange = (filter) => {
+    const next = new URLSearchParams(searchParams);
+    if (filter === 'Todos') {
+      next.delete('modality');
+    } else {
+      next.set('modality', filter);
+    }
+    setSearchParams(next);
+  };
+
+  function applyRanges(event) {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget);
+    const next = new URLSearchParams(searchParams);
+    for (const field of ['max_price', 'available_from', 'available_until']) {
+      const value = values.get(field);
+      if (typeof value === 'string' && value) next.set(field, value);
+      else next.delete(field);
+    }
+    setSearchParams(next);
+  }
 
   // Lógica para ocultar el banner a usuarios logueados o recurrentes
   const [showBanner] = useState(() => {
@@ -37,8 +64,11 @@ export default function Home() {
       const query = new URLSearchParams();
       if (searchQuery) query.set('search', searchQuery);
       if (categoryQuery) query.set('category', categoryQuery);
-      if (conditionQuery) query.set('condition', conditionQuery); // <-- NUEVO
+      if (conditionQuery) query.set('condition', conditionQuery);
       if (activeFilter !== 'Todos') query.set('modality', activeFilter);
+      if (maxPrice) query.set('max_price', maxPrice);
+      if (availableFrom) query.set('available_from', availableFrom);
+      if (availableUntil) query.set('available_until', availableUntil);
       try {
         const suffix = query.size ? `?${query}` : '';
         setProducts(await apiRequest(`/publications${suffix}`, { signal: controller.signal }));
@@ -50,7 +80,7 @@ export default function Home() {
     };
     loadProducts();
     return () => controller.abort();
-  }, [activeFilter, searchQuery, categoryQuery, conditionQuery]);
+  }, [activeFilter, searchQuery, categoryQuery, conditionQuery, maxPrice, availableFrom, availableUntil, retry]);
 
   return (
     <div className="space-y-10 py-4">
@@ -73,12 +103,20 @@ export default function Home() {
         </h3>
         <div className="flex flex-wrap gap-3">
           {['Todos', 'Venta', 'Alquiler', 'Préstamo'].map((filter) => (
-            <button key={filter} onClick={() => setActiveFilter(filter)} className={`flex items-center gap-2 px-4 py-2 rounded-xl border-4 border-ranti-ink font-bold text-sm transition-all ${activeFilter === filter ? 'bg-ranti-ink text-white shadow-solid-sm' : 'bg-white hover:bg-gray-100'}`}>
+            <button key={filter} onClick={() => handleFilterChange(filter)} className={`flex items-center gap-2 px-4 py-2 rounded-xl border-4 border-ranti-ink font-bold text-sm transition-all ${activeFilter === filter ? 'bg-ranti-ink text-white shadow-solid-sm' : 'bg-white hover:bg-gray-100'}`}>
               {filter === 'Todos' && <Filter size={16} />} {filter}
             </button>
           ))}
         </div>
       </section>
+
+      <form className="workflow" aria-label="Precio y disponibilidad" onSubmit={applyRanges}
+        key={`${maxPrice}:${availableFrom}:${availableUntil}`}>
+        <label>Precio máximo (S/)<input name="max_price" type="number" min="0" step="0.01" defaultValue={maxPrice} /></label>
+        <label>Disponible desde<input type="date" name="available_from" defaultValue={availableFrom} /></label>
+        <label>Disponible hasta (fin exclusivo)<input type="date" name="available_until" defaultValue={availableUntil} /></label>
+        <button>Aplicar filtros</button>
+      </form>
 
       {loading ? (
         <div className="text-center py-20 font-bold text-gray-500">Cargando catálogo…</div>
@@ -87,6 +125,7 @@ export default function Home() {
           <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
           <h3 className="text-2xl font-display font-bold mb-2">No se pudo cargar el catálogo</h3>
           <p className="font-bold text-red-700">{error}</p>
+          <button type="button" onClick={() => setRetry(value => value + 1)}>Volver a cargar el catálogo</button>
         </div>
       ) : products.length ? (
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">

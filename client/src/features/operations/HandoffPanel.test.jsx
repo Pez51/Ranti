@@ -37,3 +37,21 @@ it('shows a return action for delivered rentals, not for sales',()=>{
   expect(screen.getByRole('heading',{name:'Vendido · Entrega confirmada'})).toBeInTheDocument();
   expect(screen.queryByRole('button',{name:/devolución/})).not.toBeInTheDocument();
 });
+
+it('generates a delivery code only after the buyer confirms the equipment and accessories',()=>{
+  const onAction=vi.fn();
+  render(<HandoffPanel operation={{status:'Lista para entrega',modality:'Alquiler',payment_simulation:{completed:true},handoff:{...h,is_owner:false,agreed:true,otp_required:true,revision:2}}} onAction={onAction}/>);
+  const generate=screen.getByRole('button',{name:'Generar código para esta entrega'});
+  expect(generate).toBeDisabled();
+  fireEvent.click(screen.getByRole('checkbox',{name:/Estoy con el oferente/}));
+  expect(generate).toBeDisabled();
+  fireEvent.click(screen.getByRole('checkbox',{name:/Los accesorios coinciden/}));
+  fireEvent.click(generate);
+  expect(onAction).toHaveBeenCalledWith({action:'generate-delivery-code',revision:2,accessories_confirmed:true});
+});
+
+it('blocks owner OTP verification after the attempt limit',()=>{
+  render(<HandoffPanel operation={{status:'Lista para entrega',modality:'Alquiler',payment_simulation:{completed:true},handoff:{...h,agreed:true,otp_required:true,delivery_locked:true,delivery_attempts_remaining:0}}} onAction={vi.fn()}/>);
+  expect(screen.getByText(/Código bloqueado/)).toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'Validar y registrar entrega'})).toBeDisabled();
+});

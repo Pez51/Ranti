@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { apiRequest } from '../../lib/api';
 import { getSession } from '../../lib/auth';
 import { useChatWorkspace } from '../../lib/chat-workspace-context';
-export default function OpenChat({ publicationId, operationId, ownerId }) {
+export default function OpenChat({ publicationId, operationId, ownerId, label }) {
   const session=getSession(),navigate=useNavigate();
   const workspace=useChatWorkspace();
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -14,5 +14,5 @@ export default function OpenChat({ publicationId, operationId, ownerId }) {
   }
   if(!session)return <Link to="/login">Inicia sesión para consultar al oferente</Link>;
   if(!operationId&&session.user.id===ownerId)return workspace?<button type="button" onClick={workspace.openInbox}>Ver consultas de mis publicaciones</button>:<Link to="/mensajes">Ver consultas de mis publicaciones</Link>;
-  return <div className="open-chat"><button type="button" disabled={busy} onClick={open}>{busy?'Abriendo chat…':operationId?'Abrir chat de esta operación':'Consultar al oferente'}</button>{error&&<p role="alert">{error}</p>}</div>;
+  return <div className="open-chat"><button type="button" disabled={busy} onClick={open}>{busy?'Abriendo chat…':label||(operationId?'Abrir chat de esta operación':'Consultar al oferente')}</button>{error&&<p role="alert">{error}</p>}</div>;
 }

@@ -1,0 +1,15 @@
+export const incidenceReasonLabels = {
+  communication: 'Problemas de comunicación',
+  other: 'Otro problema',
+  meeting: 'Encuentro o entrega',
+  payment: 'Pago',
+  not_as_described: 'Artículo distinto a lo acordado',
+  damage: 'Daños o mal funcionamiento',
+  return: 'Devolución',
+  late_return: 'Devolución fuera de plazo',
+  guarantee: 'Garantía',
+  delivery_absence: 'Entrega incumplida por inasistencia',
+  delivery_not_validated: 'Entrega sin validar',
+  money_not_received: 'Dinero no recibido',
+  paid_cancellation: 'Cancelación antes de la entrega',
+};
